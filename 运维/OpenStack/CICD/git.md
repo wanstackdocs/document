@@ -248,11 +248,296 @@ git checkout其实是用版本库里的版本替换工作区的版本，无论�
 ```
 
 ## 5. 远程仓库
+```shell
+要关联一个远程库，使用命令git remote add origin git@server-name:path/repo-name.git；
+
+关联一个远程库时必须给远程库指定一个名字，origin是默认习惯命名；
+
+关联后，使用命令git push -u origin master第一次推送master分支的所有内容；
+
+此后，每次本地提交后，只要有必要，就可以使用命令git push origin master推送最新修改；
+
+删除远程库
+如果添加的时候地址写错了，或者就是想删除远程库，可以用git remote rm <name>命令。使用前，建议先用git remote -v查看远程库信息：
+
+$ git remote -v
+origin  git@github.com:michaelliao/learn-git.git (fetch)
+origin  git@github.com:michaelliao/learn-git.git (push)
+然后，根据名字删除，比如删除origin：
+
+$ git remote rm origin
+此处的“删除”其实是解除了本地和远程的绑定关系，并不是物理上删除了远程库。远程库本身并没有任何改动。要真正删除远程库，需要登录到GitHub，在后台页面找到删除按钮再删除。
+
+# 删除远程分支
+git push origin --delete [branch_name]
+
+```
 
 ## 6. 分支管理
 
-## 7. 标签管理
+### 6.1 创建与合并分支
+```shell
+查看分支：git branch
 
-## 8. 自定义git
+创建分支：git branch <name>
 
-## 9. git命令集合
+切换分支：git checkout <name>或者git switch <name>
+
+创建+切换分支：git checkout -b <name>或者git switch -c <name>
+
+合并某分支到当前分支：git merge <name>
+
+删除分支：git branch -d <name>
+```
+
+### 6.2 标签管理
+```shell
+在Git中打标签非常简单，首先，切换到需要打标签的分支上：
+
+$ git branch
+* dev
+  master
+$ git checkout master
+Switched to branch 'master'
+然后，敲命令git tag <name>就可以打一个新标签：
+
+$ git tag v1.0
+可以用命令git tag查看所有标签：
+
+$ git tag
+v1.0
+默认标签是打在最新提交的commit上的。有时候，如果忘了打标签，比如，现在已经是周五了，但应该在周一打的标签没有打，怎么办？
+
+方法是找到历史提交的commit id，然后打上就可以了：
+
+$ git log --pretty=oneline --abbrev-commit
+12a631b (HEAD -> master, tag: v1.0, origin/master) merged bug fix 101
+4c805e2 fix bug 101
+e1e9c68 merge with no-ff
+f52c633 add merge
+cf810e4 conflict fixed
+5dc6824 & simple
+14096d0 AND simple
+b17d20e branch test
+d46f35e remove test.txt
+b84166e add test.txt
+519219b git tracks changes
+e43a48b understand how stage works
+1094adb append GPL
+e475afc add distributed
+eaadf4e wrote a readme file
+比方说要对add merge这次提交打标签，它对应的commit id是f52c633，敲入命令：
+
+$ git tag v0.9 f52c633
+再用命令git tag查看标签：
+
+$ git tag
+v0.9
+v1.0
+注意，标签不是按时间顺序列出，而是按字母排序的。可以用git show <tagname>查看标签信息：
+
+$ git show v0.9
+commit f52c63349bc3c1593499807e5c8e972b82c8f286 (tag: v0.9)
+Author: Michael Liao <askxuefeng@gmail.com>
+Date:   Fri May 18 21:56:54 2018 +0800
+
+    add merge
+
+diff --git a/readme.txt b/readme.txt
+...
+可以看到，v0.9确实打在add merge这次提交上。
+
+还可以创建带有说明的标签，用-a指定标签名，-m指定说明文字：
+
+$ git tag -a v0.1 -m "version 0.1 released" 1094adb
+用命令git show <tagname>可以看到说明文字：
+
+$ git show v0.1
+tag v0.1
+Tagger: Michael Liao <askxuefeng@gmail.com>
+Date:   Fri May 18 22:48:43 2018 +0800
+
+version 0.1 released
+
+commit 1094adb7b9b3807259d8cb349e7df1d4d6477073 (tag: v0.1)
+Author: Michael Liao <askxuefeng@gmail.com>
+Date:   Fri May 18 21:06:15 2018 +0800
+
+    append GPL
+
+diff --git a/readme.txt b/readme.txt
+
+
+小结
+命令git tag <tagname>用于新建一个标签，默认为HEAD，也可以指定一个commit id；
+
+命令git tag -a <tagname> -m "blablabla..."可以指定标签信息；
+
+命令git tag可以查看所有标签。
+
+
+如果标签打错了，也可以删除：
+
+$ git tag -d v0.1
+Deleted tag 'v0.1' (was f15b0dd)
+因为创建的标签都只存储在本地，不会自动推送到远程。所以，打错的标签可以在本地安全删除。
+
+如果要推送某个标签到远程，使用命令git push origin <tagname>：
+
+$ git push origin v1.0
+Total 0 (delta 0), reused 0 (delta 0)
+To github.com:michaelliao/learngit.git
+ * [new tag]         v1.0 -> v1.0
+或者，一次性推送全部尚未推送到远程的本地标签：
+
+$ git push origin --tags
+Total 0 (delta 0), reused 0 (delta 0)
+To github.com:michaelliao/learngit.git
+ * [new tag]         v0.9 -> v0.9
+如果标签已经推送到远程，要删除远程标签就麻烦一点，先从本地删除：
+
+$ git tag -d v0.9
+Deleted tag 'v0.9' (was f52c633)
+然后，从远程删除。删除命令也是push，但是格式如下：
+
+$ git push origin :refs/tags/v0.9
+To github.com:michaelliao/learngit.git
+ - [deleted]         v0.9
+要看看是否真的从远程库删除了标签，可以登陆GitHub查看。
+```
+
+
+## 7. 难点分析
+```shell
+git cherry-pick
+当你需要另一个分支的所有代码变动，那么就采用合并，比如在master分支上（git merge dev）。另一种情况是，你只需要部分代码变动（某几个提交），这时可以采用 Cherry pick。
+
+一、基本用法
+git cherry-pick命令的作用，就是将指定的提交（commit）应用于其他分支。
+
+
+$ git cherry-pick <commitHash>
+上面命令就会将指定的提交commitHash，应用于当前分支。这会在当前分支产生一个新的提交，当然它们的哈希值会不一样。
+
+举例来说，代码仓库有master和feature两个分支。
+
+
+    a - b - c - d   Master
+         \
+           e - f - g Feature
+现在将提交f应用到master分支。
+
+
+# 切换到 master 分支
+$ git checkout master
+
+# Cherry pick 操作
+$ git cherry-pick f
+上面的操作完成以后，代码库就变成了下面的样子。
+
+
+    a - b - c - d - f   Master
+         \
+           e - f - g Feature
+从上面可以看到，master分支的末尾增加了一个提交f。
+
+git cherry-pick命令的参数，不一定是提交的哈希值，分支名也是可以的，表示转移该分支的最新提交。
+
+
+$ git cherry-pick feature
+上面代码表示将feature分支的最近一次提交，转移到当前分支。
+
+二、转移多个提交
+Cherry pick 支持一次转移多个提交。
+
+
+$ git cherry-pick <HashA> <HashB>
+上面的命令将 A 和 B 两个提交应用到当前分支。这会在当前分支生成两个对应的新提交。
+
+如果想要转移一系列的连续提交，可以使用下面的简便语法。
+
+
+$ git cherry-pick A..B 
+上面的命令可以转移从 A 到 B 的所有提交。它们必须按照正确的顺序放置：提交 A 必须早于提交 B，否则命令将失败，但不会报错。
+
+注意，使用上面的命令，提交 A 将不会包含在 Cherry pick 中。如果要包含提交 A，可以使用下面的语法。
+
+
+$ git cherry-pick A^..B 
+三、配置项
+git cherry-pick命令的常用配置项如下。
+
+（1）-e，--edit
+
+打开外部编辑器，编辑提交信息。
+
+（2）-n，--no-commit
+
+只更新工作区和暂存区，不产生新的提交。
+
+（3）-x
+
+在提交信息的末尾追加一行(cherry picked from commit ...)，方便以后查到这个提交是如何产生的。
+
+（4）-s，--signoff
+
+在提交信息的末尾追加一行操作者的签名，表示是谁进行了这个操作。
+
+（5）-m parent-number，--mainline parent-number
+
+如果原始提交是一个合并节点，来自于两个分支的合并，那么 Cherry pick 默认将失败，因为它不知道应该采用哪个分支的代码变动。
+
+-m配置项告诉 Git，应该采用哪个分支的变动。它的参数parent-number是一个从1开始的整数，代表原始提交的父分支编号。
+
+
+$ git cherry-pick -m 1 <commitHash>
+上面命令表示，Cherry pick 采用提交commitHash来自编号1的父分支的变动。
+
+一般来说，1号父分支是接受变动的分支（the branch being merged into），2号父分支是作为变动来源的分支（the branch being merged from）。
+
+四、代码冲突
+如果操作过程中发生代码冲突，Cherry pick 会停下来，让用户决定如何继续操作。
+
+（1）--continue
+
+用户解决代码冲突后，第一步将修改的文件重新加入暂存区（git add .），第二步使用下面的命令，让 Cherry pick 过程继续执行。
+
+
+$ git cherry-pick --continue
+（2）--abort
+
+发生代码冲突后，放弃合并，回到操作前的样子。
+
+（3）--quit
+
+发生代码冲突后，退出 Cherry pick，但是不回到操作前的样子。
+
+五、转移到另一个代码库
+Cherry pick 也支持转移另一个代码库的提交，方法是先将该库加为远程仓库。
+
+
+$ git remote add target git://gitUrl
+上面命令添加了一个远程仓库target。
+
+然后，将远程代码抓取到本地。
+
+
+$ git fetch target
+上面命令将远程代码仓库抓取到本地。
+
+接着，检查一下要从远程仓库转移的提交，获取它的哈希值。
+
+
+$ git log target/master
+最后，使用git cherry-pick命令转移提交。
+
+
+$ git cherry-pick <commitHash>
+（完）
+
+
+
+git rebase
+https://www.liaoxuefeng.com/wiki/896043488029600/1216289527823648
+
+```
