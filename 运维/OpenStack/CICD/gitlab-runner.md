@@ -1,0 +1,11 @@
+sudo gitlab-runner register \
+  --non-interactive \
+  --url "http://10.10.10.12" \
+  --registration-token "VQd51yq3x7yhmZEd9R94" \
+  --executor "shell" \
+  --docker-image alpine:latest \
+  --description "shell-runner" \
+  --tag-list "openstack_v,shell" \
+  --run-untagged="true" \
+  --locked="false" \
+  --access-level="not_protected"
