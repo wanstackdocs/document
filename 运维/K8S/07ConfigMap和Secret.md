@@ -202,10 +202,83 @@ env:
 ```
 
 ## 7.3 利用ConfigMap解耦配置
+
+### 7.3.1 ConfigMap介绍
 不管是参数传递还是环境变量，虽然应用程序和配置文件独立出来，但是还是强耦合。
 如果多套环境，比如开发环境、测试环境、生产环境。配置文件和应用都是强耦合在一起的。
 
+ConfigMap可以将配置存放在独立的资源对象中，这有助于在不同环境（开发、测试、质量保障和生产等）下拥有多份同名配置清单（通过命名空间加以区分）。pod是通过名称引用 ConfigMap 的，因此可以在多环境下使用相同的 pod 定义描述，同时保持不同的配置值 以适应不同环境。
 
+
+### 7.3.2 创建ConfigMap
+```shell
+# 通过kubectl 命令创建 configmap
+# 创建一个名为fortune-config 的ConfigMap, 仅包含单映射条目 sleep-interval=25
+kubectl create configmap fortune-config --from-literal=sleep-interval=25
+# 可以创建多条映射条目
+kubectl create configmap myconfigmap --from-literal=foo=bar --from-literal=bar=baz --from-literal=one=two
+
+# 查看configmap的yaml描述信息
+[root@k8s-master01 ~]# k get configmaps fortune-config -o yaml
+apiVersion: v1
+data:
+  sleep-interval: "25"   # 映射中的唯一条目
+kind: ConfigMap  # 描述符定义了一个configmap
+metadata:
+  creationTimestamp: "2021-09-03T11:29:00Z"
+  name: fortune-config  # 映射的名称（通过这个名称引用ConfigMap）
+  namespace: default
+  resourceVersion: "5150533"
+  uid: 2b5cb7c7-4791-4825-ae2e-b8035bc7e0d4
+
+[root@k8s-master01 ~]# k get configmaps myconfigmap -o yaml
+apiVersion: v1
+data:
+  bar: baz
+  foo: bar
+  one: two
+kind: ConfigMap
+metadata:
+  creationTimestamp: "2021-09-09T17:26:31Z"
+  name: myconfigmap
+  namespace: default
+  resourceVersion: "6159123"
+  uid: 4042f250-0f16-4996-ad6c-acd6d835a4ef
+```
+使用yaml文件创建ConfigMap
+fortune-config.yml
+```yml
+apiVersion: v1
+data:
+  sleep-interval: "25"
+kind: ConfigMap
+metadata:
+  name: fortune-config
+  namespace: default
+```
+
+从文件内容创建ConfigMap条目
+```shell
+# 从磁盘上读取文件，并将文件内容单独存储为ConfigMap 中的条目 
+# kubectl 会在当前目录下查找 config-file.conf 文件，并将文件内容存储在 ConfigMap中以config-file.conf为键名的条目下
+k create configmap my-config --from-file=config-file.conf
+# 可以手工指定键名
+k create configmap my-config --from-file=customkey=config-file.conf
+# 这条命令会将文件内容存在键名为customkey的条目下。与使用字面量时相同，多次使用 --from-file 参数可增加多个文件条目
+```
+从文件夹创建ConfigMap条目
+```shell
+# 除单独引入每个文件外，甚至可以引入某一文件夹中的所有文件
+kubectl create configmap my -config --from-file=/path/to/dir
+# 这种情况下， kubectl 会为文件夹中的每个文件单独创建条目，仅限于那些文件名可作为合法 ConfigMap 键名的文件 
+```
+混合文件和文件夹创建ConfigMap条目
+```shell
+# 创建 ConfigMap 时可 以混合使用上述提到的所有选项
+k create configmap my-config --from-file=foo.json --from-file=bar=foobar.conf --from-file=config-opts/ --from-literal=some=thing
+```
+
+### 7.3.3 给容器传递ConfigMap条目作为环境变量
 
 
 ## 7.4 使用Secret传递敏感数据
