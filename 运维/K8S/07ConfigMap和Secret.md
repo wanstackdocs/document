@@ -278,7 +278,34 @@ kubectl create configmap my -config --from-file=/path/to/dir
 k create configmap my-config --from-file=foo.json --from-file=bar=foobar.conf --from-file=config-opts/ --from-literal=some=thing
 ```
 
-### 7.3.3 给容器传递ConfigMap条目作为环境变量
+### 7.3.3 给容器传递ConfigMap条目作为环境变量（1）
+```yml
+# 定义一个环境变量 INTERVAL, 并将其值设置为fortune-config ConfigMap 中键名是sleep-interval对应的值
+# 运行在html-generator 容器中的进程读取到环境变量INTERVAL 的值为25
+器中的进程读取到环境变量 INTERVAL 的值为 25
+[root@k8s-master01 configmap]# cat fortune-pod-env-configmap.yaml 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-env-from-configmap
+spec:
+  containers:
+  - image: wanstack/fortune:env
+    env:
+    - name: INTERVAL # 在环境变量中添加一个新的环境变量，环境变量是配置在pod的容器中，非pod级别
+      valueFrom:
+        configMapKeyRef:
+          name: fortune-config
+          key: sleep-interval
+    name: html-generator
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  volumes:
+  - name: html
+    emptyDir: {}
+
+```
 
 
 ## 7.4 使用Secret传递敏感数据

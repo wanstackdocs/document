@@ -66,7 +66,7 @@ function repack(){
     fi
 
     if [ ! -f $src_rpm_path/$src_rpm_name ]; then
-        curl -o $src_rpm_path/$src_rpm_name $base_url/$src_rpm_name
+        curl --connect-timeout 1200 -o $src_rpm_path/$src_rpm_name $base_url/$src_rpm_name
     fi
 
     rm -rf ~/rpmbuild
@@ -83,7 +83,7 @@ function repack(){
         spec=~/rpmbuild/SPECS/*.spec
     fi
     sed -i 's/^find.*gitignore.*/#&/' $spec
-    sed 's/.*gpgverify.*/#&/' $spec
+    sed -i 's/.*gpgverify.*/#&/' $spec
     cd ~/rpmbuild
 
     if ! rpmbuild --clean -bb $spec 2>&1 | tee build.log; then
@@ -157,7 +157,7 @@ case $code_name in
         repack "python-glanceclient" "python-glanceclient-3.2.2" "python-glanceclient-3.2.2-2.el8.src.rpm"
         ;;
     keystone)
-        repack "keystonemiddleware" "keystone-18.0.0" "openstack-keystone-18.0.0-1.el8.src.rpm"
+        repack "keystone" "keystone-18.0.0" "openstack-keystone-18.0.0-1.el8.src.rpm"
         ;;
     keystonemiddleware)
         repack "keystonemiddleware" "keystonemiddleware-9.1.0" "python-keystonemiddleware-9.1.0-2.el8.src.rpm"
@@ -166,7 +166,7 @@ case $code_name in
         repack "keystoneauth1" "keystoneauth1-4.2.1" "python-keystoneauth1-4.2.1-2.el8.src.rpm"
         ;;
     python-keystoneclient)
-        repack "keystoneauth1" "keystoneauth1-4.1.1" "python-keystoneclient-4.1.1-2.el8.src.rpm"
+        repack "python-keystoneclient" "python-keystoneclient-4.1.1" "python-keystoneclient-4.1.1-2.el8.src.rpm"
         ;;
     *)
         echo "Unsupported module: $module"

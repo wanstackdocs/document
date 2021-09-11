@@ -1,0 +1,18 @@
+stages:
+  - build
+  - smoke_test
+
+build:
+  stage: build
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+  script:
+    - ./build.sh
+
+smoke_test:
+  stage: smoke_test
+  script:
+    - ./exec_smoke_test.sh
+  only:
+    refs:
+    - master
