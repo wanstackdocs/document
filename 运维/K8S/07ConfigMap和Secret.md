@@ -282,7 +282,6 @@ k create configmap my-config --from-file=foo.json --from-file=bar=foobar.conf --
 ```yml
 # 定义一个环境变量 INTERVAL, 并将其值设置为fortune-config ConfigMap 中键名是sleep-interval对应的值
 # 运行在html-generator 容器中的进程读取到环境变量INTERVAL 的值为25
-器中的进程读取到环境变量 INTERVAL 的值为 25
 [root@k8s-master01 configmap]# cat fortune-pod-env-configmap.yaml 
 apiVersion: v1
 kind: Pod
@@ -304,10 +303,94 @@ spec:
   volumes:
   - name: html
     emptyDir: {}
+```
+
+### 7.3.4 一次传递ConfigMap 的所有条目作为环境变量
+```shell
+[root@k8s-master01 config_env]# cat fortuneloop.sh 
+#!/bin/bash
+trap "exit" SIGINT
+while :
+do 
+  echo CONFIG_FOO $CONFIG_FOO
+  echo CONFIG_BAR $CONFIG_BAR
+  echo CONFIG_FOO-BAR $CONFIG_FOO-BAR
+  sleep 3
+done
+[root@k8s-master01 config_env]# cat Dockerfile 
+FROM ubuntu:18.04
+ENV CONFIG_FOO: "FOO"
+ENV CONFIG_BAR: "BAR"
+ENV CONFIG_FOO-BAR: "FOO-BAR"
+ADD fortuneloop.sh /bin/fortuneloop.sh
+ENTRYPOINT ["/bin/fortuneloop.sh", "CONFIG_FOO", "CONFIG_BAR", "CONFIG_FOO-BAR"]
+
+
+# 打包成镜像
+docker build -t docker.io/wanstack/fortune:three .
+# 上传到hub.docker.com上
+docker push docker.io/wanstack/fortune:three
+```
+
+```yml
+[root@k8s-master01 configmap]# cat config-three.yml 
+apiVersion: v1
+data:
+  CONFIG_FOO: "TEXT1"
+  CONFIG_BAR: "TEST2"
+  CONFIG_FOO-BAR: "TEXT3"
+kind: ConfigMap
+metadata:
+  name: my-config-map
+  namespace: default
+
+```
+config-pod-three.yaml
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-three
+spec:
+  containers:
+  - image: wanstack/fortune:three
+    envFrom:
+    - prefix: CONFIG_
+      configMapRef:
+        name: my-config-map
+    name: html-generator
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  volumes:
+  - name: html
+    emptyDir: {}
 
 ```
 
-
+### 7.3.4 传递ConfigMap条目作为命令行参数
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-env-from-configmap
+spec:
+  containers:
+  - image: wanstack/fortune:env
+    env:
+    - name: INTERVAL # 在环境变量中添加一个新的环境变量，环境变量是配置在pod的容器中，非pod级别
+      valueFrom:
+        configMapKeyRef:
+          name: fortune-config
+          key: sleep-interval
+    name: html-generator
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  volumes:
+  - name: html
+    emptyDir: {}
+```
 ## 7.4 使用Secret传递敏感数据
 
 ## 7.5 本章小结
