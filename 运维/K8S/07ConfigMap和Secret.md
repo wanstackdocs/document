@@ -369,6 +369,7 @@ spec:
 ```
 
 ### 7.3.4 传递ConfigMap条目作为命令行参数
+环境变量的定义与之前相同，但是需要通过$(ENV_VARIABLE_NAME)将环境变量的值注入到参数变量的值
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -383,6 +384,7 @@ spec:
         configMapKeyRef:
           name: fortune-config
           key: sleep-interval
+    args: ["$(INTERVAL)"] # 在参数设置中引用环境变量
     name: html-generator
     volumeMounts:
     - name: html
@@ -391,6 +393,150 @@ spec:
   - name: html
     emptyDir: {}
 ```
+
+### 7.3.5 使用configMap 卷将条目暴露为文件
+创建文件夹configmap-files ，并在configmap-files中创建my-nginx-config.conf文件
+开启gzip压缩的Nginx配置文件 configmap-files/my-nginx-config.conf
+```shell
+server {
+  listen      80;
+  servername  www.kubia-example.com;
+  gzip        on;
+  gzip_types  text/plain application/xml;
+  location / {
+    root  /usr/share/nginx/html;
+    index index.html index.hml;
+  }
+
+}
+```
+在configmap-files中创建sleep-interval 文件,内容为 25
+```shell
+25
+```
+
+从文件夹创建configmap
+```shell
+k create configmap fortune-config --from-file=configmap-files
+```
+
+从文件夹创建configmap的yaml格式定义，configmap包含2个条目，条目的键名和文件名相同。
+```yaml
+[root@k8s-master01 configmap]# k get configmaps fortune-config -o yaml
+apiVersion: v1
+data:
+  my-nginx-config.conf: |  # 这里的 | 管道符表示后续的条目值是多行字面量
+    server {
+      listen      80;
+      server_name  www.kubia-example.com;
+      gzip        on;
+      gzip_types  text/plain application/xml;
+      location / {
+        root  /usr/share/nginx/html;
+        index index.html index.hml;
+      }
+
+    }
+  sleep-interval: |
+    25
+kind: ConfigMap
+metadata:
+  creationTimestamp: "2021-09-13T11:12:26Z"
+  name: fortune-config
+  namespace: default
+  resourceVersion: "6764239"
+  uid: 450a813b-ec7d-4142-8f70-25e08725e1dd
+```
+使用上面的configmap创建pod
+创建包含configmap条目内容的卷，只需要创建一个引用configmap名称的卷并挂载到容器中。
+pod 挂载configmap条目作为文件: fortune-pod-configmap-volume.yaml
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-configmap-volume
+spec:
+  containers:
+  - image: nginx:alpine
+    name: web-server
+    volumeMounts:
+    - name: config
+      mountPath: /etc/nginx/conf.d # 挂载configmap卷至这个位置
+      readOnly: true
+    ports:
+    - containerPort: 80
+      protocol: TCP
+  volumes:
+  - name: config
+    configMap:
+      name: fortune-config # 卷定义引用fortune-config
+
+```
+检查nginx是否使用被挂载的配置文件。
+现在的web服务器应该已经被配置为会压缩响应，可以将本地的8080端口转发到pod的80端口，使用curl进行测试。
+```shell
+ k port-forward fortune-configmap-volume 8080:80 &
+ [root@k8s-master01 configmap]# curl -H "Accept-Encoding: gzip" -I localhost:8080
+Handling connection for 8080
+HTTP/1.1 200 OK
+Server: nginx/1.21.3
+Date: Mon, 13 Sep 2021 11:46:28 GMT
+Content-Type: text/html
+Last-Modified: Tue, 07 Sep 2021 15:50:58 GMT
+Connection: keep-alive
+ETag: W/"61378a62-267"
+Content-Encoding: gzip # 这里响应说明已经被压缩了
+
+```
+检查被挂载的configmap卷内容
+```shell
+[root@k8s-master01 configmap]# k exec fortune-configmap-volume -c web-server -- ls /etc/nginx/conf.d
+my-nginx-config.conf
+sleep-interval
+```
+这里sleep-interval 不是给nginx使用的，但是确实被包含进来了。怎么办呢？可以指定暴露的configmap条目
+
+卷内暴露指定configmap条目
+将 my-nginx-config.conf 暴露为configmap卷中的文件，sleep-interval作为环境变量
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-config
+spec:
+  containers:
+  - image: wanstack/fortune:env
+    env:
+    - name: INTERVAL # 在环境变量中添加一个新的环境变量，环境变量是配置在pod的容器中，非pod级别
+      valueFrom:
+        configMapKeyRef:
+          name: fortune-config
+          key: sleep-interval
+    name: html-generator
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  - image: nginx:alpine
+    name: web-server
+    volumeMounts:
+    - name: config
+      mountPath: /etc/nginx/conf.d
+      readOnly: true
+    ports:
+    - containerPort: 80
+      protocol: TCP
+  volumes:
+  - name: config
+    configMap:
+      name: fortune-config
+      items:  # 选择包含在卷中的条目
+      - key: my-nginx-config.conf  # 该键对应的条目被包含
+        path: gzip.conf # 条目的值被存在在该文件中
+  - name: html
+    emptyDir: {}
+```
+
 ## 7.4 使用Secret传递敏感数据
 
 ## 7.5 本章小结
