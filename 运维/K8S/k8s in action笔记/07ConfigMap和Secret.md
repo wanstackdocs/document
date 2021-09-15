@@ -496,7 +496,7 @@ sleep-interval
 ```
 这里sleep-interval 不是给nginx使用的，但是确实被包含进来了。怎么办呢？可以指定暴露的configmap条目
 
-卷内暴露指定configmap条目
+#### 7.3.5.1 卷内暴露指定configmap条目
 将 my-nginx-config.conf 暴露为configmap卷中的文件，sleep-interval作为环境变量
 
 ```yaml
@@ -536,6 +536,70 @@ spec:
   - name: html
     emptyDir: {}
 ```
+挂载某一文件夹会隐藏该文件夹中已存在的文件，比如上面的例子会隐藏原本/etc/nginx/conf.d/ 文件夹下的所有文件。
+
+configmap独立条目作为文件被挂载，且不隐藏文件夹中的其他文件。
+假设拥有一个包含文件myconfig.conf的configMap卷(可能是一个文件夹)，希望能将其添加为/etc文件夹下的文件someconfig.conf。通过属性subPath可以将该文件挂载的同时又不影响文件夹中的其他文件。具体示例如下:
+```yaml
+spec:
+  containers:
+  - image: some/image
+    volumeMounts:
+    - name: myvolume
+      mountPath: /etc/someconfig.conf  # 挂载至某一个文件，而不是文件夹
+      subPath: myconfig.conf  # 仅挂载指定条目，而不是完整的卷
+```
+
+#### 7.3.5.2 为configmap卷中的文件设定权限
+r 读权限read  4
+w 写权限write 2
+x 操作权限execute  1
+
+configmap卷中的文件默认被设置为644 (-rw-r-r--),可以通过卷规格定义中的defaultMode属性改变默认权限。
+```yaml
+valumes:
+- name: config
+  configMap:
+    name: fortune-config
+    defaultMode: "6600" 
+```
+```shell
+文件权限除了r、w、x外还有s、t、i、a权限：
+
+s：文件属主和组设置SUID和GUID，文件在被设置了s权限后将以root身份执行。在设置s权限时文件属主、属组必须先设置相应的x权限，否则s权限并不能正真生效（chmod 命令不进行必要的完整性检查，即使不设置x权限就设置s权限，chmod也不会报错，当我们ls -l时看到rwS，大写S说明s权限未生效）。Linux修改密码的passwd便是个设置了SUID的程序，普通用户无读写/etc/shadow文件的权限确可以修改自己的密码。
+
+ls -al /usr/bin/passwd
+-rwsr-xr-x 1 root root 32988 2008-12-08 17:17 /usr/bin/passwd
+
+我们可以通过字符模式设置s权限：chmod a+s filename，也可以使用绝对模式进行设置：
+
+设置s u i d：将相应的权限位之前的那一位设置为4；
+设置g u i d：将相应的权限位之前的那一位设置为2；
+两者都置位：将相应的权限位之前的那一位设置为4+2=6。
+
+如：chmod 4764 filename   //设置SUID
+
+t ：设置粘着位，一个文件可读写的用户并一定相让他有删除此文件的权限，如果文件设置了t权限则只用属主和root有删除文件的权限，通过chmod +t filename 来设置t权限。
+
+i：不可修改权限  例：chattr u+i filename 则filename文件就不可修改，无论任何人，如果需要修改需要先删除i权限，用chattr -i filename就可以了。查看文件是否设置了i权限用lsattr filename。
+
+a：只追加权限， 对于日志系统很好用，这个权限让目标文件只能追加，不能删除，而且不能通过编辑器追加。可以使用chattr +a设置追加权限。
+```
+
+
+### 7.3.6 更新应用配置且不重启应用程序
+使用环境变量或者命令行参数作为配置源的弊端在于无法在进程运行时更新配置。 
+将ConfigMap暴露为卷可以达到配置热更新的效果， 无须重新创建pod或者重启容器。
+ConfigMap被更新之后， 卷中引用它的所有文件也会相应更新， 进程发现文件被改变之后进行重载。 
+Kubemetes同样支待文件更新之后手动通知容器。
+
+注意点: 
+1. configmap文件更新时间较长可能需要1分钟
+2. configmap仅仅是对配置文件进行更新，如果想要程序应用需要程序进行重载配置文件，比如nginx -s reload操作。
+
+举例：
+
+
 
 ## 7.4 使用Secret传递敏感数据
 
