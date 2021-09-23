@@ -400,7 +400,7 @@ spec:
 ```shell
 server {
   listen      80;
-  servername  www.kubia-example.com;
+  server_name  www.kubia-example.com;
   gzip        on;
   gzip_types  text/plain application/xml;
   location / {
@@ -598,9 +598,258 @@ Kubemetes同样支待文件更新之后手动通知容器。
 2. configmap仅仅是对配置文件进行更新，如果想要程序应用需要程序进行重载配置文件，比如nginx -s reload操作。
 
 举例：
+kubectl edit 命令修改ConfigMap fortune-config 来关闭gzip压缩。
+kubectl edit configmap fortune-config
+将 gzip  on; 修改为 gzip  off; 
+重载nginx配置
+kubectl exec fortune-config -c web-server -- nginx -s reload
+
+## 7.4 使用Secret给容器传递敏感数据
+
+  1. 将Secret条目作为环境变量传递给容器
+  2. 将Secret条目暴露为卷中的文件
+
+Kubemetes 通过仅仅将 Secret 分发到需要访问 Secret 的 pod 所在的机器节点来保障其安全性。 另外， Secret 只会存储在节点的内存中， 永不写入物理存储， 这样从节点上删除 Secret 时就不需要擦除磁盘了
+  1. 采用 ConfigMap 存储非敏感的文本配置数据。
+  2. 采用 Secret 存储天生敏感的数据， 通过键来引用。 如果一 个配置文件同时包含敏感与非敏感数据， 该文件应该被存储在 Secret 中。
+
+### 7.4.1 创建Secret
+创建私钥和证书，使nginx可以服务于https流量。
+```shell
+# 创建证书和私钥
+[root@master secret]# openssl genrsa -out https.key 2048
+[root@master secret]# openssl req -new -x509 -key https.key -out https.cert -days 3650 -subj /CN=www.kubia-example.com
+# 创建一个内容为bar的文件foo
+echo bar > foo
+
+# 创建secret，这里是引用文件，也可以引用目录
+k create secret generic fortune-https --from-file=https.key --from-file=https.cert --from-file=foo 
+```
+
+### 7.4.2 对比Secret和ConfigMap
+```shell
+[root@master secret]# k get secrets fortune-https -o yaml
+apiVersion: v1
+data:
+  foo: YmFyCg==
+  https.cert: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURFekNDQWZ1Z0F3SUJBZ0lKQUlRRnQ2SWRPLzhETUEwR0NTcUdTSWIzRFFFQkN3VUFNQ0F4SGpBY0JnTlYKQkFNTUZYZDNkeTVyZFdKcFlTMWxlR0Z0Y0d4bExtTnZiVEFlRncweU1UQTVNak14TkRVMk5UTmFGdzB6TVRBNQpNakV4TkRVMk5UTmFNQ0F4SGpBY0JnTlZCQU1NRlhkM2R5NXJkV0pwWVMxbGVHRnRjR3hsTG1OdmJUQ0NBU0l3CkRRWUpLb1pJaHZjTkFRRUJCUUFEZ2dFUEFEQ0NBUW9DZ2dFQkFMUGkveU9KVmFpd2QyLzFmR0ZGS0NwbFlvalkKTjdIRmd4S1ZMSkdubDJlQ1NCR0tvbGxHWUZUcVFxNVVBQlUvampvd1BJR05ubHpaVWRzc01CUHA2Y2xia0Z4SwpVUDl6N3pITEtLSEpnRktyTVByUEpVTzc5V3RPMVFJQS9Qb1JOVzcrV1FGdHkxcVVWTHBHSStDd2JHWTFRVVc3CjFUOHlTbEQxNDNvbDRqUFd4eWVoZWdyejJrcXlBUVZkV2IxTFU2bzJKVXNueXAyRk1QMmRvdExMRUptOUtBcEQKZVY2dC9uejlhc3RJUGh3U0NRa08rMWNPVVdyNW1kbWJnOGY3R2orQjUxUmZSQnRoSnFFNHZIVVR4QWRxWXVwMgpKMkpCVlNibmx4WU9uN2l5R0x1cEMweUN2a2o1bnhNTnIyaXZlV1MwMjIrMkRabjlXQmtaKzVEM3FjTUNBd0VBCkFhTlFNRTR3SFFZRFZSME9CQllFRkxyK1BiR1h6OUVWODREZHMwdldzbjNJTWg4T01COEdBMVVkSXdRWU1CYUEKRkxyK1BiR1h6OUVWODREZHMwdldzbjNJTWg4T01Bd0dBMVVkRXdRRk1BTUJBZjh3RFFZSktvWklodmNOQVFFTApCUUFEZ2dFQkFEZTU4NlZtaVV5bkVTeFVJYWFwbG11OWxmTy83MUxLSnArZUdRbjQzeFhRZFY5Z0NObXVoRU53CnZqaW13MnFMVllLU25oRjF0alNyTWZZT3FkMlJOTlEzUkdaWjh4WEtsRk5yQWZBYnJ4YWE1VVA1cFhCbURXN2MKNSthTG10azhoRlNzWWt5aHROV05nT0U0WWRoVm9OY2FIYk9kNFhSalhCZU5GSmVTaDlPdVJxc0ZHdkdWMGJYNAo2UDdoam1pQ1kxM3hLNEZEWWxURklZWEphbTdObTI4QjdYTDB5akN5UlNRL20rVURmeGtNWmZEUEJKWHk5dVIrCnV1U1FZWFlwdlNudzZNOWdQcXAzV0ZpL0Y5S0Z1aGRqeWxSSTF6Mk9mNFdhajJPVlgxLytHdjF5SUY2QXZpcE0KQmdaTzVQYm5lZTVGc29zenRRWkZoZzFkb2doc2gwOD0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+  https.key: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFcEFJQkFBS0NBUUVBcytML0k0bFZxTEIzYi9WOFlVVW9LbVZpaU5nM3NjV0RFcFVza2FlWFo0SklFWXFpCldVWmdWT3BDcmxRQUZUK09PakE4Z1kyZVhObFIyeXd3RStucHlWdVFYRXBRLzNQdk1jc29vY21BVXFzdytzOGwKUTd2MWEwN1ZBZ0Q4K2hFMWJ2NVpBVzNMV3BSVXVrWWo0TEJzWmpWQlJidlZQekpLVVBYamVpWGlNOWJISjZGNgpDdlBhU3JJQkJWMVp2VXRUcWpZbFN5ZktuWVV3L1oyaTBzc1FtYjBvQ2tONVhxMytmUDFxeTBnK0hCSUpDUTc3ClZ3NVJhdm1aMlp1RHgvc2FQNEhuVkY5RUcyRW1vVGk4ZFJQRUIycGk2blluWWtGVkp1ZVhGZzZmdUxJWXU2a0wKVElLK1NQbWZFdzJ2YUs5NVpMVGJiN1lObWYxWUdSbjdrUGVwd3dJREFRQUJBb0lCQUJwamZHWXNLV0s3c0dtKwpLMmJoakVqYjRwNk1pVzhNdUhPcmFvUmJmM3h4d2p6QWg1eHRGSWlnYlBQQjR0azdINVF0cTFLZUFkTkJGaDcrCjFuYTFZOVJrR0VOUnE1d3QxN01JU0llalZhM0s2ejUvME1tazh4V3cxTktjYm9BSXNqdjhGL1o3c3M4dzMxVU0KSVFzL0ZrZlFIQ2tzcXRYQWZPSnZqOVZGWlcrUkhXUGRXMTdSdStNTVpEUHpzV0xUZWF4WWFHTW9KaDhxM0Y1Qwo3SEZTKzhNd2dRMitxSDFiZlpKTjNEaXNUZWl6REpGUEsxNnptQjFnalVBVmFET3RuaU5aQ20zTWwvQS9PcG1XCkQreEMrcHdqMXM3Z1k5MEl5c05zd0pzSW5lYmtMSWFSalRuVEJNQWxVcW5WTmNPMUs0Q1ZOamk1SGhDN0h5MU4KaVVROHFSRUNnWUVBMTNBTXpuL1Y2bk5uMFZqbFF5QmJRdng2VmM5K2pDbEc1YkpIRFNwUzNScFN1RUViZ0crZApPNy9ab0h6ZWQwNlhiVnJWSkRtVU5mbGdtS0lMZDh2aVVhV0sycTkwOTB1R0lhcFhiTEt0b0lyNkpSUXE1ak1uClpPNUVTcEwxc1dTQWNWWnNPQW55a3F2RDR4WDFWd3I3QmlOak5tbmtkTXpzRnA2bmlBZGp4eFVDZ1lFQTFjRnAKeERJMExjOUxSWEkxelhxcjRuVWU1bGRoTlUvek4wc2s0TmsydUpRN1RJWWRhK21VcG5jdFR4eWE2b0t1dGpFOQo3RUxXTjcvNDVza0tKNHJUcWFKWkdWbVZvV211R2pFU0tQc0orNnlmZEQ3TmpUSDFyVGhIS204bHIvckdrbi9kCkJoVWhLNVZGMldpRDRReUVzMjlRRkN0R2F6ZmQzZE5kZEJOMVkzY0NnWUJ6ejNveTc2bHcxUVQwRnROM21FYzIKNVQ1bUxwcWFnZjNvc0VOZG9talZEcmQwOFJyMW1ncHQraDNsRmZzSks2aGZVcnJOTkY2bC9SNmVMazMzNGhRUgpTK291MEs4UjJQbUwwMlFYdkoxMWRnQXVPbjh0TEVaN0RWS012Qjl6Y3RGUkcrSWs1Y1FPY0dObkNZRFBmOG1kCmJSeUNQYjVmdzJFT2I4OGpZc1dTV1FLQmdRREd1RFBheVEySFZRTFdRaEpRdisyUjcyNVZtQUJ3THE2ZXhnWTMKM3Rnbml1OEIrbURaMU9KMFM3RmNyZXc3Zmxoc1dxVUZ3ekVoelIvWmRpY3hrYmVyS1pvSm5pWWtWSG9lTVdaLwpvTHFzTmRSYm5wTTc0NmxSYTFPRjJLVEIwTExRdVh4Q1RseHpCeWhUc1AyQnVFQ2FEQzczUVRBTE4zblU0czRyCnZuZFFpd0tCZ1FDam45UjY0OC9ReEJWWWJNUHFXNWlzbEtNVnJnTGZkekxaL1dYZm41V1NrdFJZVmVGVXRxN1kKa1FzanlZeEpWR0hYeGduMExobTdNQUJ6TVRKdnJISzNpYnA5UkN2U1ROdlVYK2x0OE1CaWo0eVZTbUxTVXJxTQpUZ2xmdlJhSWRnN0E3WUJYRzl6bUZqNzNldDhGRjJYaGtYczVkWHFEYWZlazl2ajNvUGdkZGc9PQotLS0tLUVORCBSU0EgUFJJVkFURSBLRVktLS0tLQo=
+kind: Secret
+metadata:
+  creationTimestamp: "2021-09-23T14:58:54Z"
+  name: fortune-https
+  namespace: default
+  resourceVersion: "36566"
+  uid: ab146304-dacf-4748-9ce9-c3085b9fd163
+type: Opaque
+
+[root@master secret]# k get configmaps fortune-config -o yaml
+apiVersion: v1
+data:
+  my-nginx-config.conf: |
+    server {
+      listen      80;
+      server_name  www.kubia-example.com;
+      gzip        on;
+      gzip_types  text/plain application/xml;
+      location / {
+        root  /usr/share/nginx/html;
+        index index.html index.hml;
+      }
+
+    }
+  sleep-interval: |
+    25
+kind: ConfigMap
+metadata:
+  creationTimestamp: "2021-09-23T14:42:19Z"
+  name: fortune-config
+  namespace: default
+  resourceVersion: "35604"
+  uid: 482b815d-858f-451c-8972-a8936a3cd73e
+
+```
+Secret 条目的内容会被以 Base64格式编码，而ConfigMap直接以纯文本展示。这种区别导致在处理YAML和JSON格式的Secret时会稍许有些麻烦，需要在设置和读取相关条目时对内容进行编解码。
+
+采用Base64编码的原因很简单。Secret的条目可以涵盖二进制数据，而不仅仅是纯文本。Base64编码可以将二进制数据转换为纯文本，以YAML 或JSON格式展示。
+
+stringData字段：
+由于并非所有的敏感数 据都是二进 制形 式，Kubemetes允许通过Secret的stringData字段设置条目的纯文本值，如下面的代码清单所示
+```yaml
+kind: Secret
+apiVersion: v1
+stringData:
+  foo: bar
+data:
+  https.cert: xxx
+  https.key: xxx
+```
+
+stringData字段是只写的（注意：是只写，非只 读），可以被用来设置条目值。通过kubectl ge七-o yaml获取Secret的YAML格式定义时，不会显示 stringData字段。 相反，stringData字段中的所有条目（如上面示例中的foo条目） 会被Base64编码之后展示在data字段下。
+
+### 7.4.3 在pod中使用Secret
+```shell
+# 修改fortune-config configmap开启https
+k edit configmaps fortune-config 
+
+apiVersion: v1
+data:
+  my-nginx-config.conf: |
+    server {
+      listen      80;
+      listen      443 ssl;
+      server_name  www.kubia-example.com;
+      ssl_certificate   certs/https.cert;
+      ssl_certificate_key certs/https.key;
+      ssl_protocols     TLSv1 TLSv1.1 TLSv1.2;
+      ssl_ciphers       HIGH:!aNULL:!MD5;
+      gzip        on;
+      gzip_types  text/plain application/xml;
+      location / {
+        root  /usr/share/nginx/html;
+        index index.html index.hml;
+      }
+
+    }
+  sleep-interval: |
+    25
+
+上面配置了服务器从／etc/nginx/ceris 中读取证书与密钥文件，因此之后 需要将secret 卷挂载于此。
+
+# 创建pod，并将fortune-https 挂载到pod上
+vim fotune-pod-https.yaml
 
 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fortune-https
+spec:
+  containers:
+  - image: wanstack/fortune:env
+    env:
+    - name: INTERVAL # 在环境变量中添加一个新的环境变量，环境变量是配置在pod的容器中，非pod级别
+      valueFrom:
+        configMapKeyRef:
+          name: fortune-config
+          key: sleep-interval
+    name: html-generator
+    volumeMounts:
+    - name: html
+      mountPath: /var/htdocs
+  - image: nginx:alpine
+    name: web-server
+    volumeMounts:
+    - name: html
+      mountPath: /usr/share/nginx/html
+      readOnly: true
+    - name: config
+      mountPath: /etc/nginx/conf.d
+      readOnly: true
+    - name: certs
+      mountPath: /etc/nginx/certs  # 配置Nginx从/etc/nginx/certs 中读取证书和密钥文件，需要将secret挂载于此
+      readOnly: true
+    ports:
+    - containerPort: 80
+    - containerPort: 443
+  volumes:
+  - name: config
+    configMap:
+      name: fortune-config
+      items:  # 选择包含在卷中的条目
+      - key: my-nginx-config.conf  # 该键对应的条目被包含
+        path: gzip.conf # 条目的值被存在在该文件中
+  - name: html
+    emptyDir: {}
+  - name: certs
+    secret:
+      secretName: fortune-https  # 这里引用fortune-https secret来定义secret卷
 
-## 7.4 使用Secret传递敏感数据
 
-## 7.5 本章小结
+k apply -f fortune-pod-https.yaml
+
+# 测试nginx是否使用secret中的证书和密钥
+# 开启端口转发
+kubectl port-forward fortune-https 8443:443 &
+
+# 使用curl进行测试
+curl https://localhost:8443 -k -v
+* About to connect() to localhost port 8443 (#0)
+*   Trying ::1...
+* Connected to localhost (::1) port 8443 (#0)
+* Initializing NSS with certpath: sql:/etc/pki/nssdb
+Handling connection for 8443
+* skipping SSL peer certificate verification
+* SSL connection using TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+* Server certificate:
+* 	subject: CN=www.kubia-example.com
+* 	start date: Sep 23 14:56:53 2021 GMT
+* 	expire date: Sep 21 14:56:53 2031 GMT
+* 	common name: www.kubia-example.com
+* 	issuer: CN=www.kubia-example.com
+> GET / HTTP/1.1
+> User-Agent: curl/7.29.0
+> Host: localhost:8443
+> Accept: */*
+> 
+< HTTP/1.1 200 OK
+< Server: nginx/1.21.3
+< Date: Thu, 23 Sep 2021 15:55:13 GMT
+< Content-Type: text/html
+< Content-Length: 35
+< Last-Modified: Thu, 23 Sep 2021 15:55:10 GMT
+< Connection: keep-alive
+< ETag: "614ca35e-23"
+< Accept-Ranges: bytes
+< 
+Your aim is high and to the right.
+* Connection #0 to host localhost left intact
+
+```
+
+### 7.4.4 Secret 卷存储与内存
+通过挂载secret卷至文件夹/etc/nginx/certs 将证书和私钥成功传递给容器。secret卷采用内存文件系统列出容器的挂载点。
+```shell
+[root@master secret]# k exec -ti fortune-https -c web-server -- mount | grep certs
+tmpfs on /etc/nginx/certs type tmpfs (ro,relatime)
+```
+由于使用的是tmpfs，存储在secret中的数据不会写入磁盘。
+
+### 7.4.5 通过环境变量暴露secret条目
+```yaml
+env:
+- name: FOO_SECRET # 通过secret条目设置环境变量
+  valueFrom:  
+    secretKeyRef:
+      name: fortune-https  # secret 键
+      key: foo # secret 的名称
+```
+
+
+### 7.4.6 docker私有仓库上传和拉取
+
+上传：
+在docker hub上创建私有仓库
+修改本地tag：
+docker tag e65db7680f9d wanstack/private:env  # 其中wanstack/private 是私有仓库
+docker push wanstack/private:env # 上传至docker创建的私有仓库
+
+在pod中拉取私有镜像：
+创建用于docker镜像仓库鉴权的secret
+k create secret docker-registry mydockerhubsecret --docker-username=wanstack --docker-password='xxx!@#' --docker-email=xxx@139.com
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: private-pod
+spec:  
+  imagePullSecrets:  # 字段 imagePullSecrets 引用了 mydockerhubsecret Secret
+  - name: mydockerhubsecret
+  containers:
+  - image: wanstack/private:env
+    name: main
+
+```
+k apply -f private-pod.yaml
+假设某系统中通常运行大量 pod，你可能会好奇是否需要为每个 pod 都添加相同的镜像拉取 Secret。幸运的是，情况并非如此。第12章中将会学习到如何通过添加Secret至ServiceAccount使所有pod 都能 自动添加上镜像拉取Secret。
