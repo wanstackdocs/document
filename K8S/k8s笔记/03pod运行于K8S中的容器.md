@@ -133,7 +133,8 @@ Handling connection for 8888
 You've hit kubia-manual
 
 ```
+```shell
          8888                                    8080
 curl <---------> kubectl port-forward process <---------> pod kubia-manual
 
-
+```
