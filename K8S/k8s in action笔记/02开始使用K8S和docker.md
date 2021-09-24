@@ -77,12 +77,12 @@ spec:
 - replica count: 副本个数，指定应运行pod的数量
 - pod template: pod 模板，用于创建新的pod副本
 
->确保符合标签选择器app=kubia的pod实例始终是三个。当没有足够的pod时，根据提供的pod模板创建 新的pod。
->模板中的pod标签显然必须和ReplicationController的标签选择器匹配，否则控制器将无休止地创建新的容器。
->因为启动新 pod不会使实际的副本数量接近期望的副本数量。
->为了防止出现这种情况，API服务会校验ReplicationController的定义，不会接收错误配置。
->根本不指定选择器也是一种选择。在这种情况下，它会自动根据pod模板中的标签自动配置。
->提示定义ReplicationController时不要指定pod选择器，让Kubemetes从pod模板中提取它。这样YAML更简短。
+>- 确保符合标签选择器app=kubia的pod实例始终是三个。当没有足够的pod时，根据提供的pod模板创建 新的pod。
+>- 模板中的pod标签显然必须和ReplicationController的标签选择器匹配，否则控制器将无休止地创建新的容器。
+>- 因为启动新 pod不会使实际的副本数量接近期望的副本数量。
+>- 为了防止出现这种情况，API服务会校验ReplicationController的定义，不会接收错误配置。
+>- 根本不指定选择器也是一种选择。在这种情况下，它会自动根据pod模板中的标签自动配置。
+>- 提示定义ReplicationController时不要指定pod选择器，让Kubemetes从pod模板中提取它。这样YAML更简短。
 
 ```shell
 [root@master example_yaml]# k get pod  --show-labels 
@@ -161,7 +161,31 @@ private-pod      1/1     Running       2          21h
 ```
 
 ### 1.8 查看应用运行在那个node上
+```shell
+[root@master ~]# k get pod -o wide
+NAME             READY   STATUS             RESTARTS   AGE    IP              NODE     NOMINATED NODE   READINESS GATES
+fortune-config   1/2     CrashLoopBackOff   239        23h    172.173.55.17   node01   <none>           <none>
+kubia-n6szd      1/1     Running            0          151m   172.173.55.22   node01   <none>           <none>
+private-pod      1/1     Running            2          21h    172.173.55.15   node01   <none>           <none>
 
+[root@master ~]# k describe pod kubia-n6szd 
+Name:         kubia-n6szd
+Namespace:    default
+Priority:     0
+Node:         node01/192.168.101.201
+Start Time:   Fri, 24 Sep 2021 19:35:06 +0800
+Labels:       app=kubia
+Annotations:  <none>
+Status:       Running
+IP:           172.173.55.22
+IPs:
+  IP:           172.173.55.22
+Controlled By:  ReplicationController/kubia
+Containers:
+  kubia:
+...
+
+```
 
 
 ## 2. kubectl 命令行tab补全
