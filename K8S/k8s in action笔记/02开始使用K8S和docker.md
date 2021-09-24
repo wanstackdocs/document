@@ -1,3 +1,4 @@
+[toc]
 ## 1 在K8S上运行一个简单的应用
 
 ### 1.1 创建一个简单的Node.js 应用
@@ -76,12 +77,12 @@ spec:
 - replica count: 副本个数，指定应运行pod的数量
 - pod template: pod 模板，用于创建新的pod副本
 
-- 确保符合标签选择器app=kubia的pod实例始终是三个。当没有足够的pod时，根据提供的pod模板创建 新的pod。
-- 模板中的pod标签显然必须和ReplicationController的标签选择器匹配，否则控制器将无休止地创建新的容器。
-- 因为启动新 pod不会使实际的副本数量接近期望的副本数量。
-- 为了防止出现这种情况，API服务会校验ReplicationController的定义，不会接收错误配置。
-- 根本不指定选择器也是一种选择。在这种情况下，它会自动根据pod模板中的标签自动配置。
-- 提示定义ReplicationController时不要指定pod选择器，让Kubemetes从pod模板中提取它。这样YAML更简短。
+>确保符合标签选择器app=kubia的pod实例始终是三个。当没有足够的pod时，根据提供的pod模板创建 新的pod。
+>模板中的pod标签显然必须和ReplicationController的标签选择器匹配，否则控制器将无休止地创建新的容器。
+>因为启动新 pod不会使实际的副本数量接近期望的副本数量。
+>为了防止出现这种情况，API服务会校验ReplicationController的定义，不会接收错误配置。
+>根本不指定选择器也是一种选择。在这种情况下，它会自动根据pod模板中的标签自动配置。
+>提示定义ReplicationController时不要指定pod选择器，让Kubemetes从pod模板中提取它。这样YAML更简短。
 
 ```shell
 [root@master example_yaml]# k get pod  --show-labels 
@@ -119,11 +120,47 @@ You've hit kubia-rxdr9
 
 ```
 
-### 1.7 pod，ReplicationController, service介绍
+### 1.7 水平伸缩应用
+```shell
+# 查看现在rc副本数
+[root@master ~]# k get rc
+NAME    DESIRED   CURRENT   READY   AGE
+kubia   3         3         3       142m
 
-### 1.8 水平伸缩应用
+# 现在想增加到5个
+[root@master ~]# k scale rc kubia --replicas=5
+replicationcontroller/kubia scaled
+[root@master ~]# k get rc
+NAME    DESIRED   CURRENT   READY   AGE
+kubia   5         5         5       143m
+[root@master ~]# k get pod
+NAME             READY   STATUS             RESTARTS   AGE
+fortune-config   1/2     CrashLoopBackOff   237        23h
+kubia-jr6kv      1/1     Running            0          6s
+kubia-lwc8p      1/1     Running            0          6s
+kubia-n6szd      1/1     Running            0          143m
+kubia-nrxc6      1/1     Running            0          143m
+kubia-rxdr9      1/1     Running            0          143m
+private-pod      1/1     Running            2          21h
 
-### 1.9 查看应用运行在那个node上
+# 现在想缩减到1个
+[root@master ~]# k scale rc kubia --replicas=1
+replicationcontroller/kubia scaled
+[root@master ~]# k get rc
+NAME    DESIRED   CURRENT   READY   AGE
+kubia   1         1         1       143m
+[root@master ~]# k get pod
+NAME             READY   STATUS        RESTARTS   AGE
+fortune-config   1/2     Error         238        23h
+kubia-jr6kv      1/1     Terminating   0          35s
+kubia-lwc8p      1/1     Terminating   0          35s
+kubia-n6szd      1/1     Running       0          143m
+kubia-nrxc6      1/1     Terminating   0          143m
+kubia-rxdr9      1/1     Terminating   0          143m
+private-pod      1/1     Running       2          21h
+```
+
+### 1.8 查看应用运行在那个node上
 
 
 
