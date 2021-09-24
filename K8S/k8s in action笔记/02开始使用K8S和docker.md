@@ -8,7 +8,7 @@
 请求切换到了应用的不同实例上 。应用包含一个名为 app.js 的文件。
 
 vim app.js
-
+```shell
 const http = require('http');
 const os = require('os');
 console.log("Kubia server starting ... ");
@@ -19,6 +19,7 @@ var handler = function(request, response) {
 }
 var www = http.createServer(handler);
 www.listen(8080);
+```
 
 代码清晰地说明了实现的功能。这里在 8080 端口启动了 一个 HTTP 服务器。服务器会以状态码 200 OK 和文字 
 "You've hit <hostname>＂ 来响应每个请求 。请求 handler 会把客户端的 IP 打印到标准输出 ，以便日后查看。
