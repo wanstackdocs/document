@@ -138,3 +138,62 @@ You've hit kubia-manual
 curl <---------> kubectl port-forward process <---------> pod kubia-manual
 
 ```
+
+
+## 1.3 使用标签组织pod
+标签是附加到k8s资源上的任意键值对，可以通过标签选择器选择确切标签的资源。只要标签的key是唯一，一个资源可以拥有多个标签，一般创建资源是就会在资源上附加上标签，之后也可以增加其他标签，或者修改现有标签中的值。
+
+1. 给pod打标签
+- app: 这个标签可以表示pod属于哪个应用、组件或者微服务
+- rel: 显示pod中应用程序的版本是stable、beta、还是cannary
+
+>全丝雀发布是指在部署新版本时， 先只让一 小部分用户体验新版本以观察新版本的表现， 然后再向所有用户进行推广， 这样可以防止暴露有问题的版本给过多的用户。
+[03pod.drawio]
+
+## 1.4 创建pod时指定标签
+vim kubia-manual-with-labels.yaml
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kubia-manual-v2
+  labels:
+    creation_method: manual  # 2个标签被附加到pod上
+    env: prod
+spec:
+  containers:
+  - image: wanstack/kubia
+    name: kubia
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+```
+
+```shell
+k create -f kubia-manual-with-labels.yaml
+[root@master 03]# k get pod --show-labels 
+NAME              READY   STATUS    RESTARTS   AGE     LABELS
+kubia-manual      1/1     Running   1          128m    <none>
+kubia-manual-v2   1/1     Running   0          26s     creation_method=manual,env=prod
+kubia-n6szd       1/1     Running   1          6h30m   app=kubia
+private-pod       1/1     Running   3          25h     <none>
+
+
+[root@master 03]# k get pod -L creation_method,env
+NAME              READY   STATUS    RESTARTS   AGE     CREATION_METHOD   ENV
+kubia-manual      1/1     Running   1          132m                      
+kubia-manual-v2   1/1     Running   0          3m59s   manual            prod
+kubia-n6szd       1/1     Running   1          6h34m                     
+private-pod       1/1     Running   3          25h 
+```
+
+2. 修改现有pod
+```shell
+# 这个应该是新建标签
+[root@master 03]# k label pod kubia-manual creation_method=manual
+pod/kubia-manual labeled
+
+# 修改原有标签，注意需要加上 --overwrite
+[root@master 03]# k label pod kubia-manual-v2 env=debug --overwrite
+
+```
