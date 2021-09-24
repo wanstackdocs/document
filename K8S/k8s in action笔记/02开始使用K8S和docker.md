@@ -72,16 +72,16 @@ spec:
 ```
 解释:
 一个ReplicationController有3个组成部分:
-    - label selector: 标签选择器, 用于确定RC 作用域中有那些pod
-    - replica count: 副本个数，指定应运行pod的数量
-    - pod template: pod 模板，用于创建新的pod副本
+- label selector: 标签选择器, 用于确定RC 作用域中有那些pod
+- replica count: 副本个数，指定应运行pod的数量
+- pod template: pod 模板，用于创建新的pod副本
 
-确保符合标签选择器app=kubia的pod实例始终是三个。当没有足够的pod时，根据提供的pod模板创建 新的pod。
-模板中的pod标签显然必须和ReplicationController的标签选择器匹配，否则控制器将无休止地创建新的容器。
-因为启动新 pod不会使实际的副本数量接近期望的副本数量。
-为了防止出现这种情况，API服务会校验ReplicationController的定义，不会接收错误配置。
-根本不指定选择器也是一种选择。在这种情况下，它会自动根据pod模板中的标签自动配置。
-提示定义ReplicationController时不要指定pod选择器，让Kubemetes从pod模板中提取它。这样YAML更简短。
+- 确保符合标签选择器app=kubia的pod实例始终是三个。当没有足够的pod时，根据提供的pod模板创建 新的pod。
+- 模板中的pod标签显然必须和ReplicationController的标签选择器匹配，否则控制器将无休止地创建新的容器。
+- 因为启动新 pod不会使实际的副本数量接近期望的副本数量。
+- 为了防止出现这种情况，API服务会校验ReplicationController的定义，不会接收错误配置。
+- 根本不指定选择器也是一种选择。在这种情况下，它会自动根据pod模板中的标签自动配置。
+- 提示定义ReplicationController时不要指定pod选择器，让Kubemetes从pod模板中提取它。这样YAML更简短。
 
 ```shell
 [root@master example_yaml]# k get pod  --show-labels 
