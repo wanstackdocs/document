@@ -11,7 +11,7 @@ openstack  flavor create --ram 1024 --disk 10 --vcpus 2 small
 
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'*' IDENTIFIED BY '123456';
 
-openstack image create "disk"   --file disk  --disk-format qcow2 --container-format bare  --public
+openstack image create "Cisco-3"   --file c8000v-universalk9_8G_serial.17.04.01a.qcow2  --disk-format qcow2 --container-format bare  --public
 
 
 
@@ -48,3 +48,10 @@ nova service-list
 
 
 pip install --no-index --find-links=/data/openstack/pip -r requirements.txt
+
+
+
+qemu-img convert -U -O qcow2 /var/lib/nova/instances/$vm_uuid/disk Cisco_Router.qcow2 -p
+
+
+qemu-img convert -U -O qcow2 disk Cisco_Router.qcow2 -p
