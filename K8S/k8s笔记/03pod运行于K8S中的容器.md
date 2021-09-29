@@ -354,14 +354,177 @@ Status:       Running
 
 2. 发现其他命名空间及pod
 
+```shell
+# 列出所有的命名空间
+[root@master 03]# k get ns
+NAME              STATUS   AGE
+default           Active   6d1h
+ingress-nginx     Active   5d5h
+kube-node-lease   Active   6d1h
+kube-public       Active   6d1h
+kube-system       Active   6d1h
 
+# 默认不指定命名空间则显示时default命名空间下的资源 -A 表示显示所有命名空间下的资源
+
+# 列出 kube-system命名空间下的所有资源 
+[root@master 03]# k get pod -n kube-system 
+NAME                                      READY   STATUS    RESTARTS   AGE
+calico-kube-controllers-cdd5755b9-dm2cv   1/1     Running   5          5d
+calico-node-8mczc                         1/1     Running   6          6d
+calico-node-qzgvz                         1/1     Running   8          6d
+calico-node-r4nvp                         1/1     Running   7          6d
+coredns-6f6b8cc4f6-v4t56                  1/1     Running   7          6d
+coredns-6f6b8cc4f6-wrlht                  1/1     Running   5          5d
+etcd-master                               1/1     Running   7          6d1h
+kube-apiserver-master                     1/1     Running   10         6d1h
+kube-controller-manager-master            1/1     Running   13         6d1h
+kube-proxy-528xg                          1/1     Running   7          6d1h
+kube-proxy-qlsrj                          1/1     Running   7          6d1h
+kube-proxy-xl8nh                          1/1     Running   5          6d1h
+kube-scheduler-master                     1/1     Running   16         6d1h
+ 
+# 如果有多个用户使用同一个k8s集群，可以使用各自的命名空间，这样一来就不需要担心资源名称冲突问题。命名空间为资源提供了一个作用域。
+```
 
 
 3. 创建一个命名空间
 
+命名空间是一种和其他资源一样的k8s资源，因此可以通过将 YAML 文件提交到 k8s API服务器来创建。
+
+从YAML 文件创建命名空间
+vim custom-namespace.yaml
+```yaml
+apiVersion: v1
+kind: Namespace           # 资源类型为命名空间
+metadata:
+  name: custom-namespace  # 命名空间名称  
+```
+```shell
+[root@master 03]# k apply -f custom-namespace.yaml 
+namespace/custom-namespace created
+[root@master 03]# 
+[root@master 03]# 
+[root@master 03]# k get ns
+NAME               STATUS   AGE
+custom-namespace   Active   4s
+default            Active   6d1h
+ingress-nginx      Active   5d5h
+kube-node-lease    Active   6d1h
+kube-public        Active   6d1h
+kube-system        Active   6d1h
+```
+
+从命令行创建命名空间
+```shell
+[root@master 03]# k create namespace test
+namespace/test created
+[root@master 03]# k get ns
+NAME               STATUS   AGE
+custom-namespace   Active   84s
+default            Active   6d1h
+ingress-nginx      Active   5d5h
+kube-node-lease    Active   6d1h
+kube-public        Active   6d1h
+kube-system        Active   6d1h
+test               Active   4s
+```
+
 4. 管理其他命名空间中的对象
 
-5. 命名空间提供的隔离
+YAML 文件中可以在metadata字段中添加 namespace: custom-namespace 属性。
+命令行: 
+```shell
+[root@master 03]# k create -f kubia-manual.yaml -n custom-namespace
+pod/kubia-manual created
+[root@master 03]# k apply -f kubia-manual.yaml 
+pod/kubia-manual created
+[root@master 03]# k get pod
+NAME           READY   STATUS              RESTARTS   AGE
+kubia-gpu      1/1     Running             0          5h5m
+kubia-manual   0/1     ContainerCreating   0          2s
+kubia-n6szd    1/1     Running             4          4d7h
+private-pod    1/1     Running             6          5d2h
+[root@master 03]# k get pod -n custom-namespace 
+NAME           READY   STATUS    RESTARTS   AGE
+kubia-manual   1/1     Running   0          21s
+# 此时，我们有2个同名的pod，一个在default命名空间中，一个在custom-namespace命名空间中
+```
 
+
+切换命名空间
+```shell
+# 在列出、描述、修改和删除其他命名空间中的对象时，需要 -n 指定命名空间。
+# 如果不指定命名空间，k8s则在当前默认的命名空间中执行操作。
+
+# 查看当前上下文信息
+[root@master 03]# k config get-contexts 
+CURRENT   NAME                          CLUSTER      AUTHINFO           NAMESPACE
+*         kubernetes-admin@kubernetes   kubernetes   kubernetes-admin   default
+[root@master 03]# k config current-context
+kubernetes-admin@kubernetes
+
+# 切换命名空间
+kcd=$(k config set-context $(k config current-context) --namespace)
+# 切换到custom-namespace命名空间下
+kcd custom-namespace  
+
+```
+
+
+5. 命名空间提供的隔离
+实际上命名空间的隔离，只是部分隔离。比如想要隔离2个pod进行通信，需要k8s提供响应的网络方案，而不是依靠k8s中的民命空间。
 
 ## 1.9 停止和移除pod
+
+1. 按照名称移除pod
+```shell
+k delete pod kubia-gpu 
+
+# 在删除pod的过程中，实际上我们在指示k8s终止pod中的所有容器，k8s向进程发送一个SIGTERM信号，并等待一定的描述(默认30s)，使其正常关闭。如果没有及时关闭，则通过SIGKILL终止该进程。因此为了保证进程总是正常关闭，进程需要正确处理SIGTERM信号。
+```
+
+2. 使用标签选择器删除pod
+
+```shell
+[root@master 03]# k get pod --show-labels 
+NAME          READY   STATUS    RESTARTS   AGE     LABELS
+kubia-2t4k2   1/1     Running   0          5s      app=kubia
+kubia-n6szd   1/1     Running   4          4d21h   app=as
+private-pod   1/1     Running   6          5d16h   <none>
+
+# 根据标签删除pod
+[root@master 03]# k delete pod -l app
+pod "kubia-2t4k2" deleted
+pod "kubia-n6szd" deleted
+
+# 之前的金丝雀发布中，可以一次性删除所有金丝雀的pod
+k delete pod -l rel=canary
+```
+
+
+3. 通过删除整个命名空间来删除pod
+```shell
+# 删除命名空间, 命名空间中的pod会伴随命名空间自动删除
+k delete ns custom-namespace
+```
+
+4. 删除所有命名空间中的pod，但是保留命名空间
+
+```shell
+# 删除命名空间中的所有pod --all 参数
+k delete pod --all
+
+# 由RC创建的pod，会重新创建新的pod，除非删除RC，否则只要删除pod，RC控制器都会创建新的pod
+```
+
+
+5. 删除命名空间中(几乎)所有资源
+
+```shell
+# 删除命名空间(几乎所有的资源),包括pod和RC控制器, service也会被删除
+[root@master 03]# k delete all --all  # all 表示所有的资源类型，--all 表示所有的资源示例
+pod "kubia-mpr8p" deleted
+replicationcontroller "kubia" deleted
+service "kubernetes" deleted
+service "kubia-http" deleted
+```
