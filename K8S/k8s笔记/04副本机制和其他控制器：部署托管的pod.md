@@ -397,20 +397,368 @@ kubia-liveness-init-delay   0/1     CrashLoopBackOff   24         101m
 RS比RC关于pod选择器的表达能力更强，RS的选择器允许匹配缺少某个标签的pod(取反)，包含某个特定标签名的pod，不管其值如何(env=*), RC只能匹配标签env1=pro或者env2=devel, 但是RS可以匹配env1=pro和env2=devel(且)
 
 ### 3.2 定义ReplicaSet
-在2.7
+在2.7中，我们已经删除了RC，而保留之前RC托管的pod，现在准备把这些pod交付给RS托管起来。
 
+vim kubia-replicaset.yaml
+```yaml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: kubia
+spec:
+  replicas: 3
+  selector:
+    matchLabels:  # 这里使用了更简单的matchLabels选择器，非常类似于RC的选择器
+      app: kubia
+  template:       # 该模板和RC相同
+    metadata:
+      labels:
+        app: kubia
+    spec:
+      containers:
+      - name: kubia
+        image: wanstack/kubia
+```
 
-### 3.3 使用ReplicaSet的更富表达力的标签选择器
+### 3.3 创建和检查RS
+```shell
+# 创建RS
+k apply -f kubia-replicaset.yaml
 
-### 3.4 ReplicaSet小结
+# 查看RS
+[root@master 04]# k get rs
+NAME    DESIRED   CURRENT   READY   AGE
+kubia   3         3         3       2m59s
+[root@master 04]# k describe rs kubia 
+Name:         kubia
+Namespace:    default
+Selector:     app=kubia
+Labels:       <none>
+Annotations:  <none>
+Replicas:     3 current / 3 desired
+Pods Status:  3 Running / 0 Waiting / 0 Succeeded / 0 Failed
+Pod Template:
+  Labels:  app=kubia
+  Containers:
+   kubia:
+    Image:        wanstack/kubia
+    Port:         <none>
+    Host Port:    <none>
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Events:
+  Type    Reason            Age   From                   Message
+  ----    ------            ----  ----                   -------
+  Normal  SuccessfulCreate  3m8s  replicaset-controller  Created pod: kubia-ghm2c # 之前是2个，定义RS是3个，所以这里会再创建一个pod
+```
 
+### 3.4 使用ReplicaSet的更富表达力的标签选择器
+RS相对于RC的主要改进是更丰富的标签选择器。
+vim kubia-replicaset-matchexpression.yaml
+```yaml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: kubia
+spec:
+  replicas: 3
+  selector:
+    matchExpressions:
+      - key: app  # 此选择器要求该pod包含名为 "app"的标签
+        operator: In
+        values:
+          - kubia  # 标签的值必须是 kubia
+  template:       # 该模板和RC相同
+    metadata:
+      labels:
+        app: kubia
+    spec:
+      containers:
+      - name: kubia
+        image: wanstack/kubia
+```
+
+可以给选择器添加额外的表达式，每个表达式必须包含一个key，一个operator(运算符),并且可能还有一个values列表(取决于运算符)
+运算符:
+- In : Label的值必须与其中一个指定的values匹配
+- NotIn : Label的值与任何指定的values不匹配
+- Exists : pod必须包含一个指定名称的标签(值不重要), 使用此运算符时，不应该指定values字段
+- DoesNotExist : pod不得包含指定名称的标签，values值属性不得指定。
+如果指定了多个表达式，则所有表达式都为true才能使选择器和pod匹配，如果同时指定了matchLabels和matchExpressions，则所有标签都必须匹配，并且所有表达式都必须计算为true以使该pod与选择器匹配。
+
+### 3.5 ReplicaSet小结
+```shell
+# 删除RS，删除RS会把相关的pod一起删除
+[root@master 04]# k get pod
+NAME                        READY   STATUS             RESTARTS   AGE
+kubia-5d22f                 1/1     Running            0          21h
+kubia-6h4wc                 1/1     Running            0          21h
+kubia-ghm2c                 1/1     Running            0          42m
+kubia-liveness              1/1     Running            288        21h
+kubia-liveness-init-delay   0/1     CrashLoopBackOff   271        21h
+[root@master 04]# k get rs
+NAME    DESIRED   CURRENT   READY   AGE
+kubia   3         3         3       42m
+[root@master 04]# k delete rs kubia 
+replicaset.apps "kubia" deleted
+[root@master 04]# k get pod
+NAME                        READY   STATUS             RESTARTS   AGE
+kubia-5d22f                 1/1     Terminating        0          21h
+kubia-6h4wc                 1/1     Terminating        0          21h
+kubia-ghm2c                 1/1     Terminating        0          42m
+kubia-liveness              1/1     Running            288        21h
+kubia-liveness-init-delay   0/1     CrashLoopBackOff   271        21h
+
+```
 
 ## 4. DaemonSet在每个节点上运行一个pod
+RC和RS控制器，都是在k8s集群节点上运行特定数量的pod，但是像日志搜集器或者监控代理等需要在k8s集群的每个节点上都需要运行一个pod。这个时候就需要用到了DaemonSet 控制器了。
 
+### 4.1 DaemonSet在每个节点上运行一个pod
+DaemonSet控制器默认时会在所有节点上运行一个pod，如果节点下线，DaemonSet不会在其他地方创建该pod，但是，当一个节点上线并添加到集群中，DaemonSet会立刻部署一个新的pod，如果有人无意中删除了该pod，那么DaemonSet会重建该pod。
 
+### 4.2 DaemonSet在特定节点上运行pod
+DaemonSet默认会将pod部署到集群中所有的节点上，除非指定这些pod在某些节点上运行，可以通过pod模板中的nodeSelector属性指定。需要注意的是就算把某些节点设置为不可调度的，DaemonSet也会在这些节点上创建pod，因为无法调度的属性只会被调度器使用，但是DaemonSet管理的pod会绕过调度器。
+
+举例:
+假设有一个wanstack/ssd-monitor 的镜像，需要在包含SSD所有的节点上运行。
+我们将创建一个DaemonSet控制器，并将一些具有SSD磁盘的节点上打上disk=ssd的标签。
+
+vim ssd-monitor-daemonset.yaml
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ssd-monitor
+spec:
+  selector:
+    matchLabels:
+      app: ssd-monitor
+  template:
+    metadata:
+      labels:
+        app: ssd-monitor
+    spec:
+      nodeSelector:  # pod模板包含一个节点选择器，会选择有disk=ssd标签的节点
+        disk: ssd
+      containers:
+      - name: main
+        image: wanstack/ssd-monitor
+```
+
+```shell
+# 创建
+k apply -f ssd-monitor-daemonset.yaml
+[root@master 04]# k get ds
+NAME          DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+ssd-monitor   0         0         0       0            0           disk=ssd        26s
+[root@master 04]# k get pod
+NAME                        READY   STATUS             RESTARTS   AGE
+kubia-liveness              1/1     Running            300        22h
+kubia-liveness-init-delay   0/1     CrashLoopBackOff   283        22h
+# 并没有创建成功，因为没有节点具有disk=ssd的标签，现在给node01上打上disk=ssd的标签
+[root@master 04]# k get node
+NAME     STATUS   ROLES                  AGE   VERSION
+master   Ready    control-plane,master   16d   v1.21.5
+node01   Ready    <none>                 16d   v1.21.5
+node02   Ready    <none>                 16d   v1.21.5
+# 给node01打上标签
+[root@master 04]# k label nodes node01 disk=ssd 
+[root@master 04]# k get ds
+NAME          DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+ssd-monitor   1         1         1       1            1           disk=ssd        2m21s
+# 已经在node01上创建了
+[root@master 04]# k get pod -o wide
+NAME                        READY   STATUS             RESTARTS   AGE   IP                NODE     NOMINATED NODE   READINESS GATES
+kubia-liveness              0/1     CrashLoopBackOff   300        22h   172.165.231.166   node02   <none>           <none>
+kubia-liveness-init-delay   0/1     CrashLoopBackOff   283        22h   172.165.231.165   node02   <none>           <none>
+ssd-monitor-86dps           1/1     Running            0          63s   172.173.55.35     node01   <none>           <none>
+
+# 现在把node01的标签修改一下看看会发生什么
+[root@master 04]# k label nodes node01 disk=hdd --overwrite 
+node/node01 labeled
+# 可以看到在node01上正在删除pod
+[root@master 04]# k get pod -o wide
+NAME                        READY   STATUS             RESTARTS   AGE     IP                NODE     NOMINATED NODE   READINESS GATES
+kubia-liveness              0/1     CrashLoopBackOff   300        22h     172.165.231.166   node02   <none>           <none>
+kubia-liveness-init-delay   0/1     CrashLoopBackOff   283        22h     172.165.231.165   node02   <none>           <none>
+ssd-monitor-86dps           1/1     Terminating        0          3m10s   172.173.55.35     node01   <none>           <none>
+[root@master 04]# k get ds
+NAME          DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+ssd-monitor   0         0         0       0            0           disk=ssd        5m14s
+```
 
 ## 5. 运行执行单个任务的pod
+上面的RC,RS,DS都是需要持续运行的pod，如果遇到只想运行完成工作后就终止任务的情况，可以使用Job这种资源。
+
+### 5.1 介绍Job资源
+- Job资源允许运行一种pod，该pod在内部进程成功结束后，不重启容器，一旦任务完成，pod就被认为处于完成状态
+- 发生故障节点时，该节点上由Job管理的pod将按照RelicaSet的pod的方式，重新安排到其他节点上。
+- 如果进程本身异常退出(进程返回错误退出代码时)，可以将Job重新配置为重新启动容器。
+
+### 5.2 定义Job资源
+
+vim exporter.yaml
+```yaml
+apiVersion: batch/v1  # 可以通过 k explain Job查询
+kind: Job
+metadata:
+  name: batch-job
+spec:
+  template:  # 没有指定pod选择器，它将根据pod模板中的标签创建
+    metadata:
+      labels:
+        app: batch-job
+    spec:
+      restartPolicy: OnFailure  # Job不能使用Always为默认的重启策略
+      containers:
+      - name: main
+        image: wanstack/batch-job
+```
+上面定义了一个Job类型的资源，他将运行wanstack/batch-job镜像，该镜像调用一个运行120秒的进程，然后退出。
+在一个pod中可以指定在容器中运行的进程结束时，k8s会做什么。这是通过pod的配置属性restartPolicy完成的，默认为Always，应该修改为OnFailure或者Never，因为他们不是要无限的运行，此设置防止容器在完成任务时重新启动。
+
+### 5.3 在Job上运行一个pod
+```shell
+# 创建
+k apply -f exporter.yaml
+
+# 查看job和pod，pod任务完成后显示Completed，此时可以删除此pod
+[root@master 04]# k get pod
+NAME                        READY   STATUS             RESTARTS   AGE
+batch-job-m8snm             0/1     Completed          0          12m
+kubia-liveness              0/1     CrashLoopBackOff   310        23h
+kubia-liveness-init-delay   0/1     CrashLoopBackOff   293        23h
+[root@master 04]# k get jobs
+NAME        COMPLETIONS   DURATION   AGE
+batch-job   1/1           2m35s      12m
+
+# 查看pod日志
+[root@master 04]# k logs batch-job-m8snm 
+Sat Oct  9 16:06:41 UTC 2021 Batch job starting
+Sat Oct  9 16:08:41 UTC 2021 Finished succesfully
 
 
+```
+
+### 5.4 在Job上运行多个pod
+
+作业可以配置创建为多个pod，并以串行或者并行方式运行他们，这是通过在job中设置completions和parallelism属性来完成的。
+
+1. 顺序运行job pod
+如果需要一个job运行多次，可以将completions设置为pod运行的次数, 下面的例子是运行5次
+
+vim multi-completions-batch-job.yaml
+```yaml
+apiVersion: batch/v1  # 可以通过 k explain Job查询
+kind: Job
+metadata:
+  name: multi-completions-batch-job
+spec:
+  completions: 5
+  template:  # 没有指定pod选择器，它将根据pod模板中的标签创建
+    metadata:
+      labels:
+        app: batch-job
+    spec:
+      restartPolicy: OnFailure  # Job不能使用Always为默认的重启策略
+      containers:
+      - name: main
+        image: wanstack/batch-job
+```
+job将一个接着一个的运行5个pod，它最初创建一个pod，当pod的容器运行完成时，它创建第二个pod，依次类推，直到5个pod运行完成。如果其中一个pod发生故障，工作会创建一个新的pod，所以job总共可以创建5个以上的pod。
+
+```shell
+[root@master 04]# k get pod
+NAME                                READY   STATUS              RESTARTS   AGE
+batch-job-m8snm                     0/1     Completed           0          27m
+kubia-liveness                      0/1     CrashLoopBackOff    314        23h
+kubia-liveness-init-delay           1/1     Running             297        23h
+multi-completions-batch-job-pgdck   0/1     ContainerCreating   0          14s
+multi-completions-batch-job-s7vqt   0/1     Completed           0          2m32s
+[root@master 04]# k get jobs
+NAME                          COMPLETIONS   DURATION   AGE
+batch-job                     1/1           2m35s      27m
+multi-completions-batch-job   1/5           2m38s      2m38s
+```
+
+2. 并行运行job pod
+如果想让job并行运行pod，可以通过 parallelism 属性，指定允许多少个pod并行。下面的例子表示一共运行5个pod，并行2个
+vim multi-completions-parallelism-batch-job.yaml
+```yaml
+apiVersion: batch/v1  # 可以通过 k explain Job查询
+kind: Job
+metadata:
+  name: multi-completions-parallelism-batch-job
+spec:
+  completions: 5
+  parallelism: 2
+  template:  # 没有指定pod选择器，它将根据pod模板中的标签创建
+    metadata:
+      labels:
+        app: batch-job
+    spec:
+      restartPolicy: OnFailure  # Job不能使用Always为默认的重启策略
+      containers:
+      - name: main
+        image: wanstack/batch-job
+```
+一共运行5个pod，并行2个，只要其中一个pod运行完成，就运行下一个pod，直到5个pod都成功完成任务。
+
+3. job的扩缩放
+允许在job运行时更改job的parallelism属性
+```shell
+# 由于你将parallelism由2增加到3，另一个pod立即启动，因此现在有3个pod在运行
+k scale jobs multi-completions-parallelism-batch-job --replicas=3  # 新版本貌似不支持，待查证
+```
+
+### 5.5 限制Job pod运行多个pod时间
+如果一个pod被执行期间被卡住，或者根本无法完成执行，该怎么办？
+通过在pod中设置activeDeadlineSeconds属性，可以限制pod的时间，如果pod运行时间超过此时间，系统将尝试终止该pod，并将job标记为失败。
+> 通过指定 Job manifest 中的 spec.backoff巨m辽字段，可以配置 Job在被标记为失败之前可以重试的次数。 如果你没有明确指定它， 则默认为6。
 
 ## 6. 安排Job定期运行或在将来运行一次
+关于定时任务的运行，例如在将来执行一次，或者在指定时间间隔内重复执行。
+k8s可以通过创建CronJob资源进行配置。
+
+### 6.1 创建一个CronJob
+
+举例: 每15分钟运行一次任务
+vim cronjob.yaml
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: batch-job-every-fifteen-minites
+spec:
+  schedule: "0,15,30,45 * * * *"  # 分钟，小时，每月中的第几天，月，星期几
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: periodic-batch-job
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: main
+            image: wanstack/batch-job
+```
+在该示例中，你希望每 15 分钟运行一 次任务因此 schedule 字段的值应该是"0, 15, 30, 45****" 
+这意味着每小时的 0 、 15 、 30和 45 分钟（第一个星号），每月的每一天（第二个星号），每月（第三个星号）和每周的每一天（第四个星号）。
+相反，如果你希望每隔 30 分钟运行一 次，但仅在每月的第一天运行，则应将计划设置为 "0,30 * 1 * *", 并且如果你希望它每个星期天的 3AM 运行，将它设置为 "0 3 * * 0" (最后一个零代表星期天）。
+
+### 6.2 了解计划任务的运行方式
+
+在计划时间内，CronJob资源会创建Job资源，然后Job创建pod。
+假如你对Job中运行的pod有很高的要求，任务开始不能落后于预定的时间过多，这种情况下可以通过CronJob中startingDeadlineSconds字段来指定截至日期。具体如下：
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: batch-job-every-fifteen-minites
+  startingDeadlineSconds: 15    # pod最迟必须在预定时间后15秒开始运行。
+```
+
+> 说明: 定时任务应该时幂等的
