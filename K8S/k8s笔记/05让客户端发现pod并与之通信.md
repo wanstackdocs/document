@@ -226,21 +226,232 @@ HOME=/root
 ```
 
 2. 通过DNS发现服务
-在kube-system命名空间下，又一个
+在kube-system命名空间下，有一个名为 coredns 开头的pod(可能不止一个)，其对应的service就是其他pod的dns server地址。
+```shell
+[root@master 05]# k get svc -n kube-system 
+NAME       TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)                  AGE
+kube-dns   ClusterIP   192.168.0.10   <none>        53/UDP,53/TCP,9153/TCP   25d
+[root@master 05]# k get endpoints -n kube-system 
+NAME       ENDPOINTS                                                              AGE
+kube-dns   172.171.205.159:53,172.171.205.160:53,172.171.205.159:53 + 3 more...   25d  # 查看service对应的pod地址
+[root@master 05]# k get pod -n kube-system -o wide
+NAME                                      READY   STATUS    RESTARTS   AGE   IP                NODE     NOMINATED NODE   READINESS GATES
+calico-kube-controllers-cdd5755b9-dm2cv   1/1     Running   14         24d   192.168.101.100   master   <none>           <none>
+calico-node-8mczc                         1/1     Running   19         25d   192.168.101.202   node02   <none>           <none>
+calico-node-qzgvz                         1/1     Running   19         25d   192.168.101.100   master   <none>           <none>
+calico-node-r4nvp                         1/1     Running   17         25d   192.168.101.201   node01   <none>           <none>
+coredns-6f6b8cc4f6-v4t56                  1/1     Running   16         25d   172.171.205.159   master   <none>           <none> # 这个是dns server service的pod
+coredns-6f6b8cc4f6-wrlht                  1/1     Running   14         24d   172.171.205.160   master   <none>           <none> # 这个是dns server service的pod
+
+# 随便找一个pod，看一下其dns server的地址
+[root@master 05]# k exec kubias-6kptt -- cat /etc/resolv.conf 
+nameserver 192.168.0.10
+search default.svc.cluster.local svc.cluster.local cluster.local
+options ndots:5
+
+```
 
 3. 通过FQDN连接服务
 
-4. 在pod容器中运行shell
+前端pod可以通过服务的名称访问后端的service。比如
+```shell
+[root@master 05]# k get svc
+NAME         TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   192.168.0.1      <none>        443/TCP   18d
+kubia        ClusterIP   192.168.77.121   <none>        80/TCP    6d18h
 
-5. 无法ping通服务IP地址的原因
+# 具体的service 端口可以从pod 的环境变量中回去
+[root@master 05]# k exec kubias-9xqf6 -- curl -s http://kubia.default.svc.cluster.local
+Youve hit kubias-6wrt6
+
+# 如果前端的pod和后端的pod在同一个命名空间下，可以省略.default.svc.cluster.local 直接使用服务的名字kubia即可。
+
+```
+
+4. 在pod容器中运行shell
+```shell
+# 进入到pod容器中
+[root@master 05]# k exec -ti kubias-9xqf6 bash
+# 在pod容器中执行shell命令
+root@kubias-9xqf6:/# cat /etc/resolv.conf 
+nameserver 192.168.0.10
+search default.svc.cluster.local svc.cluster.local cluster.local
+options ndots:5
+root@kubias-9xqf6:/# ping kubia
+PING kubia.default.svc.cluster.local (192.168.77.121): 56 data bytes
+64 bytes from 192.168.77.121: icmp_seq=0 ttl=64 time=0.034 ms
+^C--- kubia.default.svc.cluster.local ping statistics ---
+1 packets transmitted, 1 packets received, 0% packet loss
+round-trip min/avg/max/stddev = 0.034/0.034/0.034/0.000 ms
+
+```
 
 ## 2. 连接集群外部的服务
 
+### 2.1 介绍服务的endpoint
+服务不是和pod直接连接的，中间还存在Endpoint。
+```shell
+[root@master 05]# k describe svc kubia 
+Name:              kubia
+Namespace:         default
+Labels:            <none>
+Annotations:       <none>
+Selector:          app=kubia  # 用于创建endpoint列表的服务pod选择器
+Type:              ClusterIP
+IP Family Policy:  SingleStack
+IP Families:       IPv4
+IP:                192.168.77.121
+IPs:               192.168.77.121
+Port:              <unset>  80/TCP
+TargetPort:        8080/TCP
+Endpoints:         172.165.231.182:8080,172.165.231.183:8080,172.173.55.53:8080 # 代表服务endpoint的pod的ip和端口列表
+Session Affinity:  None
+Events:            <none>
+
+# endpoint资源就是暴露一个服务的IP地址和端口列表
+[root@master 05]# k get endpoints 
+NAME         ENDPOINTS                                                      AGE
+kubernetes   192.168.101.100:6443                                           18d
+kubia        172.165.231.182:8080,172.165.231.183:8080,172.173.55.53:8080   6d19h
+
+# spec服务中定义了pod选择器，选择器用于构建IP地址和端口列表，然后存储在endpoint资源中。当客户端连接服务时，服务代理选择这些IP和端口中的一个，并将传入的连接重定向到在该位置监听的服务器。
+```
+
+### 2.2 手动配置服务的endpoint
+服务和endpoint解耦后，可以分别手动配置和更新他们。
+如果创建了 不包含 pod选择器的服务，k8s将不会创建endpoint资源(缺少选择器，服务也不知道服务中包含哪些pod)，这样就需要创建endpoint资源来指定该服务的endpoint列表。
+
+1. 创建没有选择器的服务
+
+>一般用于外部IP提供的服务
+
+vim external-service.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-service  # 服务的名字必须和Endpoint对象的名称相同
+spec:  # 服务中没有定义选择器
+  ports:
+  - port: 80
+```
+定义一个名为external-service的服务，它将接收端口80上传入的连接，并没有为服务定义一个pod选择器。
+
+2. 为没有选择器的服务创建Endpoint资源
+Endpoint是k8s单独的一个资源，并不是服务的一个属性，由于创建的资源中并不包含选择器，相关的Endpoint资源并没有自动创建，所以必须手动创建。
+vim external-service-endpoint.yaml
+```yaml
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: external-service # 这个名称必须和 1 中的名称一样
+subsets:
+  - addresses:  # 服务将连接重定向到endpoint的IP地址
+    - ip: 172.165.231.185   # 这里也可以是独立于k8s之外的IP
+    - ip: 172.165.231.184   # 这里也可以是独立于k8s之外的IP
+    ports:
+    - port: 80  # endpoint的目标端口
+```
+Endpoint对象需要与服务具有相同的名称 external-service , 并且包含服务的目标IP地址列表和端口列表。服务和endpoint资源都发布到服务后，这样服务就可以像具有pod选择器那样的服务正常使用。在服务创建后创建的容器将包含服务的环境变量，并且与其IP:PORT 对 的所有连接都将在服务端点之间进行负载均衡。
+如果pod比service先创建，则不会有service的环境变量，需要删除pod重新创建pod。
+```shell
+# 删除所有的pod
+k delete pod --all
+
+# 查看pod的环境变量
+[root@master 05]# k apply -f external-service-endpoint.yaml 
+endpoints/external-service created
+[root@master 05]# 
+[root@master 05]# k get endpoints
+NAME               ENDPOINTS                                                      AGE
+external-service   172.165.231.185:80,172.165.231.184:80                          3s
+kubernetes         192.168.101.100:6443                                           18d
+kubia              172.165.231.184:8080,172.165.231.185:8080,172.173.55.54:8080   6d20h
+[root@master 05]# k exec kubias-df4fg env
+kubectl exec [POD] [COMMAND] is DEPRECATED and will be removed in a future version. Use kubectl exec [POD] -- [COMMAND] instead.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+HOSTNAME=kubias-df4fg
+KUBERNETES_PORT=tcp://192.168.0.1:443
+KUBIA_SERVICE_HOST=192.168.77.121
+EXTERNAL_SERVICE_SERVICE_HOST=192.168.87.22 # 这个是service的 host
+KUBIA_PORT_80_TCP_ADDR=192.168.77.121
+EXTERNAL_SERVICE_SERVICE_PORT=80 # 这个是service 的 port
+EXTERNAL_SERVICE_PORT=tcp://192.168.87.22:80
+EXTERNAL_SERVICE_PORT_80_TCP_PROTO=tcp
+KUBERNETES_SERVICE_PORT_HTTPS=443
+KUBIA_PORT=tcp://192.168.77.121:80
+KUBIA_PORT_80_TCP=tcp://192.168.77.121:80
+EXTERNAL_SERVICE_PORT_80_TCP_PORT=80
+KUBERNETES_SERVICE_PORT=443
+KUBERNETES_PORT_443_TCP_ADDR=192.168.0.1
+EXTERNAL_SERVICE_PORT_80_TCP=tcp://192.168.87.22:80
+KUBERNETES_PORT_443_TCP_PORT=443
+KUBIA_SERVICE_PORT=80
+KUBIA_PORT_80_TCP_PROTO=tcp
+KUBIA_PORT_80_TCP_PORT=80
+EXTERNAL_SERVICE_PORT_80_TCP_ADDR=192.168.87.22
+KUBERNETES_SERVICE_HOST=192.168.0.1
+KUBERNETES_PORT_443_TCP=tcp://192.168.0.1:443
+KUBERNETES_PORT_443_TCP_PROTO=tcp
+NPM_CONFIG_LOGLEVEL=info
+NODE_VERSION=7.10.1
+YARN_VERSION=0.24.4
+HOME=/root
+
+```
+手工管理service和endpoints资源仅仅是临时解决方案，最好还是自动管理比较方便一些。如果决定将外部服务迁移到k8s运行中的pod，可以为服务添加选择器，从而对Endpoints 进行自动管理。
+
+### 2.3 为外部服务创建别名
+在 2.2 手动配置服务的endpoint 是手动配置服务的Endpoint来代替公开外部服务的方法，还有一种更简单的方法，就是通过完全限定域名(FQDN) 访问外部服务。
+
+1. 创建ExternalName类型的服务
+要创建一个具有别名的外部服务的服务时，要将创建服务资源的一个type字段设置为ExternalName，例如 在 https://reqres.in/api/user?page=2 有公共可用的API，可以定义一个指向它的服务。
+vim external-service-externalname.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-service
+spec:
+  type: ExternalName  # type 设置成ExternalName
+  externalName: api.baidu.com  # 实际服务的完全限定域名
+  ports:
+  - port: 80
+```
+
+```shell
+[root@master 05]# k get svc
+NAME               TYPE           CLUSTER-IP       EXTERNAL-IP     PORT(S)   AGE
+external-service   ExternalName   <none>           api.baidu.com   80/TCP    42m
+kubernetes         ClusterIP      192.168.0.1      <none>          443/TCP   18d
+kubia              ClusterIP      192.168.77.121   <none>          80/TCP    6d20h
+# 从上面的输出可以看到 不指定的默认是 ClusterIP，服务创建完成后，pod可以通过external-service.default.svc.cluster.info 域名(甚至是external-service)连接到外部服务器，而不是使用实际的api.baidu.com , 这隐藏了实际的服务名称，并且以后将其指向不同的服务，只需简单修改externalName属性，或者将类型重新变回ClusterIP并为服务创建Endpoint，无论是手动创建还是对服务上指定标签选择器使其自动创建。
+
+```
 
 ## 3. 将服务暴露给外部客户端
+目前为止，只讨论了在k8s集群内部如果被pod访问，但是还需要向外部公开某些访问，例如web服务器，以便外部客户端可以访问他们。
+在外部访问服务的几种方式:
+- 将服务的类型设置成NodePort -- 每个集群节点都会在打开一个端口(包括master节点), 对于NodePort服务，每个集群节点在节点本身上打开一个端口，并在将该端口上接收到的流量重定向到基础服务。该服务仅在集群内部IP和端口上才可以访问，但是也可以通过所有节点上的专有端口访问(映射应该是随机高端口)。
+- 将服务的类型设置成LoadBalance -- NodePort类型的一种扩展，这使得服务可以通过专用的负载均衡器来访问，这是由k8s正在运行的云基础设施提供的，负载均衡器将流量重定向到跨所有节点的节点端口，客户端通过负载均衡器的IP地址连接到服务。(无法演示)
+- 创建一个Ingress资源，这是一个完全不同的机制，通过一个IP地址公开多个服务 -- 它运行在HTTP层(第7层)，因此可以提供比工作在 第4层的服务更多的功能。
 
+### 3.1 使用NodePort 类型的服务
+
+
+### 3.2 通过负载均衡器将服务暴露出来
+
+### 3.3 了解外部连接特性
 
 ## 4. 通过Ingress暴露服务
+
+### 4.1 创建Ingress资源
+
+### 4.2 通过Ingress访问服务
+
+### 4.3 通过相同的Ingress暴露多个服务
+
+### 4.4 配置Ingress处理TLS传输
 
 
 ## 5. pod就绪后发出信号
