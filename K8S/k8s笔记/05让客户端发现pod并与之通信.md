@@ -405,7 +405,7 @@ HOME=/root
 在 2.2 手动配置服务的endpoint 是手动配置服务的Endpoint来代替公开外部服务的方法，还有一种更简单的方法，就是通过完全限定域名(FQDN) 访问外部服务。
 
 1. 创建ExternalName类型的服务
-要创建一个具有别名的外部服务的服务时，要将创建服务资源的一个type字段设置为ExternalName，例如 在 https://reqres.in/api/user?page=2 有公共可用的API，可以定义一个指向它的服务。
+要创建一个具有别名的外部服务的服务时，要将创建服务资源的一个type字段设置为ExternalName，例如 在 api.baidu.com 有公共可用的API，可以定义一个指向它的服务。
 vim external-service-externalname.yaml
 ```yaml
 apiVersion: v1
@@ -432,22 +432,135 @@ kubia              ClusterIP      192.168.77.121   <none>          80/TCP    6d2
 ## 3. 将服务暴露给外部客户端
 目前为止，只讨论了在k8s集群内部如果被pod访问，但是还需要向外部公开某些访问，例如web服务器，以便外部客户端可以访问他们。
 在外部访问服务的几种方式:
-- 将服务的类型设置成NodePort -- 每个集群节点都会在打开一个端口(包括master节点), 对于NodePort服务，每个集群节点在节点本身上打开一个端口，并在将该端口上接收到的流量重定向到基础服务。该服务仅在集群内部IP和端口上才可以访问，但是也可以通过所有节点上的专有端口访问(映射应该是随机高端口)。
-- 将服务的类型设置成LoadBalance -- NodePort类型的一种扩展，这使得服务可以通过专用的负载均衡器来访问，这是由k8s正在运行的云基础设施提供的，负载均衡器将流量重定向到跨所有节点的节点端口，客户端通过负载均衡器的IP地址连接到服务。(无法演示)
+- 将服务的类型设置成NodePort -- 每个集群节点都会在打开一个端口(包括master节点), 对于NodePort服务，每个集群节点在节点本身上打开一个端口，并在将该端口上接收到的流量重定向到基础服务。该服务仅在集群内部IP和端口上才可以访问，但是也可以通过所有节点上的专有端口访问(映射应该是高端口，可以指定)。
+- 将服务的类型设置成LoadBalance -- NodePort类型的一种扩展，这使得服务可以通过专用的负载均衡器来访问，这是由k8s正在运行的云基础设施提供的，负载均衡器将流量重定向到跨所有节点的节点端口，客户端通过负载均衡器的IP地址连接到服务。
 - 创建一个Ingress资源，这是一个完全不同的机制，通过一个IP地址公开多个服务 -- 它运行在HTTP层(第7层)，因此可以提供比工作在 第4层的服务更多的功能。
 
 ### 3.1 使用NodePort 类型的服务
+将一组pod公开给外部客户端的一种方式是创建一个服务，类型为NodePort。通过创建NodePort服务，可以让k8s在其节点上保留一个端口(所有节点上使用相同的端口),并将传入的连接转发给服务部分的pod。
+这与常规的服务类型(常规服务类型是ClusterIP), 但是不仅可以通过服务的内部集群IP访问NodePort服务，还可以通过任何节点的IP和端口访问NodePort服务。
 
+1. 创建NodePort类型的服务
+vim kubia-svc-nodeport.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia-nodeport
+spec:
+  type: NodePort  # 设置为NodePort服务类型
+  ports:
+  - port: 80  # 服务集群IP的端口号
+    targetPort: 8080  # pod的端口号
+    nodePort: 30123 # 集群节点的30123 端口可以访问该服务
+  selector:
+    app: kubia
+```
+将服务类型设置为NodePort,并指定该服务应该绑定到的所有集群节点的节点端口(30123),指定端口不是强制性，如果忽略它，k8s将选择一个随机端口。
+
+```shell
+[root@master 05]# k get svc
+NAME               TYPE           CLUSTER-IP        EXTERNAL-IP       PORT(S)        AGE
+external-service   ExternalName   <none>            api.sina.com.cn   80/TCP         3h39m
+kubernetes         ClusterIP      192.168.0.1       <none>            443/TCP        18d
+kubia              ClusterIP      192.168.77.121    <none>            80/TCP         6d23h
+kubia-nodeport     NodePort       192.168.130.164   <none>            80:30123/TCP   2m15s # 这行显示的是刚刚创建的NodePort 可以通过集群任意节点的IP:30123访问。
+You have new mail in /var/spool/mail/root
+[root@master 05]# curl http://192.168.101.100:30123
+You've hit kubias-df4fg
+[root@master 05]# curl http://192.168.101.100:30123
+You've hit kubias-bk9vv
+[root@master 05]# curl http://192.168.101.100:30123
+You've hit kubias-c69kj
+
+```
 
 ### 3.2 通过负载均衡器将服务暴露出来
 
-### 3.3 了解外部连接特性
+可以获取到节点IP，然后客户端指向其中一个IP+Port进行连接，但是当这个节点故障后，客户端无法访问该服务。可以考虑在集群节点之上增加负载均衡器。
+在云提供商上运行的k8s集群通常支持LoadBalancer类型的服务，但是本次实验不支持。
+负载均衡器拥有独一无二的可公开访问的IP地址，并将所有的连接重定向到服务，可以通过负载均衡器的IP地址访问服务。
+vim kubia-svc.lb.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubia-lb
+spec:
+  type: LoadBalancer  # 该服务从k8s集群的基础结构获取负载均衡器
+  ports:
+  - port: 80  # 服务集群IP的端口号
+    targetPort: 8080  # pod的端口号
+  selector:
+    app: kubia
+```
+服务类型设置为LoadBalancer而不是NodePort，如果没有指定特定的节点端口，k8s将会选择一个随机端口。
+
+创建服务后，云基础架构需要一段时间才能创建负载均衡器并将其IP地址写入服务对象，一旦这样做了，IP地址将被列为服务的外部IP地址。
+```shell
+# 因为此环境不支持，所以在EXTERNAL-IP列显示的一直是pending状态。
+[root@master 05]# k get svc kubia-lb 
+NAME       TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE
+kubia-lb   LoadBalancer   192.168.111.69   <pending>     80:30510/TCP   15m
+
+# 如果支持的话，这一栏会显示一个IP地址，然后通过 curl EXTERNAL-IP:80 就可以访问服务了。
+
+# 了解HTTP请求如果传递到该pod
+
+外部客户端--> 连接到负载均衡器的80端口上--> 路由到其中一个节点上的节点端口--> pod实例
+
+```
+
 
 ## 4. 通过Ingress暴露服务
+每个LoadBalancer服务都需要自己的负载均衡器，以及独有的公有IP地址，而Ingress只需要一个公网IP就能为许多服务提供访问。
+当客户端向Ingress发送HTTP请求时，Ingress会根据请求的主机名和路径决定请求转发到的服务。
+                      |----> kubia.example.com/kubia --> service --> pod组
+                      |
+客户端 --> ingress --> |----> kubia.example.com/foo  --> service ---> pod组
+                      |
+                      |-----> foo.example.com/foo  ----> service ---> pod组
+
+ingress 在网络栈的应用层操作，并且可以提供一些服务不能实现的功能，诸如基于cookie的会话亲和性(session affinity)等。
 
 ### 4.1 创建Ingress资源
+vim kubia-ingress.yaml
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kubia
+spec:
+  rules:
+  - host: kubia.example.com  # Ingress将域名kubia.example.com 映射到服务
+    http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend: 
+          service:
+            name: kubia-nodeport # 将所有的请求发送到kubia-nodeport服务的80端口。
+            port: 
+              number: 80
+```
+定义了一个单一规则的Ingress，确保Ingress控制器收到的所有请求主机kubia.example.com 的HTTP请求，将被发送到端口的80上的kubia-nodeport服务上。
 
 ### 4.2 通过Ingress访问服务
+```shell
+# 创建Ingress kubia-ingress.yaml
+k apply -f kubia-ingress.yaml
+
+# 想要访问http://kubia.example.com 需要域名解析Ingress控制器的IP
+
+# 报错:
+[root@master 05]# k describe ingress kubia 
+Default backend:  default-http-backend:80 (<error: endpoints "default-http-backend" not found>)
+
+# 解决:
+
+
+
+```
 
 ### 4.3 通过相同的Ingress暴露多个服务
 
