@@ -8,5 +8,5 @@ Ingress 其实就是从 Kuberenets 集群外部访问集群的一个入口，将
 
 Ingress Controller 可以理解为一个监听器，通过不断地监听 kube-apiserver，实时的感知后端 Service、Pod 的变化，当得到这些信息变化后，Ingress Controller 再结合 Ingress 的配置，更新反向代理负载均衡器，达到服务发现的作用。其实这点和服务发现工具 consul、 consul-template 非常类似。
 
-![1](.\images\1.jpg)
+![avatar](.\images\1.jpg)
 
