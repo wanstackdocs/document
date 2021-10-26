@@ -11,7 +11,7 @@ openstack  flavor create --ram 1024 --disk 10 --vcpus 2 small
 
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'*' IDENTIFIED BY '123456';
 
-openstack image create "Cisco-3"   --file c8000v-universalk9_8G_serial.17.04.01a.qcow2  --disk-format qcow2 --container-format bare  --public
+openstack image create "ISTBtiquan-tqms-centos"   --file ISTBtiquan-tqms-centos.qcow2  --disk-format qcow2 --container-format bare  --public
 
 
 
