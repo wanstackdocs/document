@@ -1,0 +1,30 @@
+default linux
+timeout 600
+label linux
+  kernel vmlinuz
+  append initrd=initrd.img ip=dhcp inst.method=http://192.168.1.1/centos8 inst.ks=http://192.168.1.1/ks.cfg
+
+# label local
+#   menu label ^Boot from local drive
+#   menu default
+#   localboot 0xffff
+
+
+# default menu.c32
+# timeout 600
+
+# menu title cpcloud 5.2 system
+
+# label linux
+#   menu label ^Auto Install cpcloud-5.2 system
+#   kernel vmlinuz
+#   append initrd=initrd.img inst.ks=http://192.168.1.1/ks.cfg
+
+# menu separator # insert an empty line
+
+
+# label local
+#    menu default
+#   menu label Boot from ^local drive
+#   localboot 0xffff
+
