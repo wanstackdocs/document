@@ -26,7 +26,7 @@ neutron端口为down ——创建的虚拟机网络端口down，导致虚拟机�
             "project": {
                 "name": "admin",
                 "domain": {
-                    "id": "default"
+                    "name": "default"
                 }
             }
         }
